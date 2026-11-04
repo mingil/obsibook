@@ -1,0 +1,30 @@
+services:
+  obsibook:
+    # 공식 이미지 (Docker Hub: kimmingil/obsibook:latest / GitHub GHCR: ghcr.io/mingil/obsibook:latest)
+    image: kimmingil/obsibook:latest
+    build: .
+    container_name: obsibook_reader
+    user: "${PUID:-1026}:${PGID:-100}"
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-18505}:8500"
+    volumes:
+      # 🔒 옵시디언 볼트 폴더는 반드시 ':ro' (Read-Only, 읽기 전용)으로 마운트하여 원본 수정을 원천 차단합니다.
+      - "${OBSIDIAN_VAULT_PATH:-./sample_vault}:/vault:ro"
+      # 💾 기기 간 이어 읽기 위치, 형광펜/암기카드, 책갈피/메모 저장소 (옵시디언 볼트 외부 독립 폴더)
+      - "${DATA_HOST_PATH:-./data}:/app/data"
+      # ⚡ 실시간 업데이트 반영을 위한 로컬 코드 마운트 (이미지 재빌드 없이 컨테이너 재시작만으로 즉시 반영)
+      - ./app.py:/app/app.py:ro
+      - ./modules:/app/modules:ro
+      - ./static:/app/static:ro
+    environment:
+      - TZ=Asia/Seoul
+      - OBSIDIAN_VAULT_PATH=/vault
+      - DATA_DIR=/app/data
+      - VAULT_TITLE=${VAULT_TITLE:-ObsiBook Library}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - APP_SECRET=${APP_SECRET:-obsibook-secret-key}
+    deploy:
+      resources:
+        limits:
+          memory: 1G

@@ -1,0 +1,16 @@
+{
+  "name": "ObsiBook — Obsidian Web E-Book Reader",
+  "short_name": "ObsiBook",
+  "description": "100% Read-Only Cross-Device Web E-Book Reader for Obsidian Vaults",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f1e7",
+  "theme_color": "#8b5e34",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%237c3aed'/><text x='50%' y='58%' dominant-baseline='middle' text-anchor='middle' font-size='56'>📖</text></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

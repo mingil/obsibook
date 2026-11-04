@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="warm_paper">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>ObsiBook — 옵시디언 스터디 & 이북 리더</title>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#7c5230" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+  <!-- Fonts: Pretendard, Gowun Batang, Noto Serif KR, JetBrains Mono (RIDIBatang & MaruBuri loaded in styles.css) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+  <!-- Tailwind CSS, Markdown, KaTeX Math & Syntax Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+
+  <link rel="stylesheet" href="/static/styles.css?v=3.3.0" />
+</head>
+<body>
+  <!-- Eye-Care Warm Blue-Light Filter Overlay -->
+  <div id="eyecare-overlay"></div>
+
+  <!-- Top Reading Progress Bar -->
+  <div id="top-progress-container">
+    <div id="top-progress-bar"></div>
+  </div>
+
+  <!-- Floating Text Selection Highlight & Flashcard Toolbar -->
+  <div id="selection-toolbar">
+    <button type="button" onclick="saveSelectionHighlight('yellow')" class="px-2 py-1 rounded-lg text-xs font-bold bg-amber-300/40 hover:bg-amber-300/70" title="노랑 형광펜">🟡</button>
+    <button type="button" onclick="saveSelectionHighlight('green')" class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-300/40 hover:bg-emerald-300/70" title="초록 형광펜">🟢</button>
+    <button type="button" onclick="saveSelectionHighlight('blue')" class="px-2 py-1 rounded-lg text-xs font-bold bg-blue-300/40 hover:bg-blue-300/70" title="파랑 형광펜">🔵</button>
+    <button type="button" onclick="saveSelectionHighlight('pink')" class="px-2 py-1 rounded-lg text-xs font-bold bg-rose-300/40 hover:bg-rose-300/70" title="분홍 형광펜">🔴</button>
+    <span class="opacity-30">|</span>
+    <button type="button" onclick="saveSelectionHighlight('yellow', true)" class="px-2.5 py-1 rounded-lg text-xs font-bold text-white" style="background: var(--accent-color);">
+      🃏 암기카드+메모
+    </button>
+  </div>
+
+  <!-- Password Lock Modal -->
+  <div id="auth-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div class="w-full max-w-md rounded-2xl p-7 shadow-2xl border" style="background: var(--bg-surface); border-color: var(--border-color);">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="text-3xl">📖</span>
+        <div>
+          <h2 class="text-xl font-bold" id="auth-vault-title">ObsiBook 서재 잠금</h2>
+          <p class="text-xs opacity-75">보호된 옵시디언 스터디 서재입니다. 열람 비밀번호를 입력해 주세요.</p>
+        </div>
+      </div>
+      <form id="auth-form" class="space-y-4">
+        <input
+          type="password"
+          id="auth-password-input"
+          placeholder="비밀번호 입력..."
+          class="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none"
+          style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+          required
+        />
+        <p id="auth-error-msg" class="text-xs text-red-500 hidden"></p>
+        <button
+          type="submit"
+          class="w-full py-3 rounded-xl font-semibold text-white transition"
+          style="background: var(--accent-color);"
+        >
+          서재 열기
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bookmark / Highlight Memo Modal -->
+  <div id="bookmark-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+    <div class="w-full max-w-md rounded-2xl p-6 shadow-2xl border" style="background: var(--bg-surface); border-color: var(--border-color);">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-bold flex items-center gap-2" id="bm-modal-header-title">🔖 현재 위치 책갈피 & 학습 메모</h3>
+        <button type="button" onclick="closeBookmarkModal()" class="text-sm opacity-60 hover:opacity-100">✕</button>
+      </div>
+      <p id="bm-modal-location" class="text-xs mb-3 px-3 py-2 rounded-lg" style="background: var(--bg-secondary); color: var(--text-secondary);"></p>
+      <div id="bm-selected-snippet-box" class="hidden mb-3 p-3 rounded-xl border text-xs italic" style="background: var(--bg-primary); border-color: var(--border-color);"></div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold mb-1 opacity-80">핵심 요약 / 암기 질문·정답 메모 (원본 파일은 수정되지 않음)</label>
+          <textarea
+            id="bm-memo-input"
+            rows="3"
+            placeholder="기억할 핵심 포인트나 암기 카드 뒷면 정답/해설을 적어보세요..."
+            class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none"
+            style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+          ></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1 opacity-80">색상 태그</label>
+          <div class="flex items-center gap-2" id="bm-color-picker">
+            <button type="button" data-color="amber" class="bm-color-btn px-3 py-1 rounded-full text-xs font-semibold border-2 border-amber-500 bg-amber-500/20">🟡 골드</button>
+            <button type="button" data-color="emerald" class="bm-color-btn px-3 py-1 rounded-full text-xs font-semibold border border-transparent bg-emerald-500/20">🟢 그린</button>
+            <button type="button" data-color="blue" class="bm-color-btn px-3 py-1 rounded-full text-xs font-semibold border border-transparent bg-blue-500/20">🔵 블루</button>
+            <button type="button" data-color="rose" class="bm-color-btn px-3 py-1 rounded-full text-xs font-semibold border border-transparent bg-rose-500/20">🔴 로즈</button>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeBookmarkModal()" class="px-4 py-2 rounded-xl text-xs font-semibold border" style="border-color: var(--border-color);">취소</button>
+          <button type="button" onclick="submitBookmarkModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-white" style="background: var(--accent-color);">저장하기 (+XP)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 📂 Quick Folder & File Switcher Modal (Anywhere Jump) -->
+  <div id="quick-switcher-modal" class="fixed inset-0 z-50 hidden items-start justify-center bg-black/60 backdrop-blur-xs p-4 pt-16 overflow-y-auto">
+    <div class="w-full max-w-2xl rounded-2xl p-5 shadow-2xl border space-y-4" style="background: var(--bg-surface); border-color: var(--border-color);">
+      <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-color);">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">🧭</span>
+          <div>
+            <h3 class="text-sm font-bold">빠른 폴더 & 파일 이동기 (단축키 Ctrl+K)</h3>
+            <p class="text-[11px] opacity-70">공부하는 도중 언제든 다른 볼트, 하위 폴더, 문서로 즉시 점프하세요.</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeQuickSwitcher()" class="text-sm opacity-60 hover:opacity-100 px-2 py-1">✕</button>
+      </div>
+      <input
+        type="text"
+        id="quick-switcher-input"
+        placeholder="이동할 폴더 이름이나 파일 제목을 입력하세요..."
+        oninput="renderQuickSwitcherList(this.value)"
+        class="w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none"
+        style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+      />
+      <div id="quick-switcher-results" class="max-h-[60vh] overflow-y-auto space-y-1.5 pr-1"></div>
+    </div>
+  </div>
+
+  <!-- 🃏 Flashcard Active Recall Quiz Modal -->
+  <div id="flashcard-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/65 backdrop-blur-xs p-4">
+    <div class="w-full max-w-xl rounded-2xl p-6 shadow-2xl border space-y-5" style="background: var(--bg-surface); border-color: var(--border-color);">
+      <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-color);">
+        <div>
+          <h3 class="text-base font-bold flex items-center gap-2">🃏 암기 플래시카드 & 핵심 복습 덱</h3>
+          <p class="text-xs opacity-75 mt-0.5">내가 형광펜 칠한 문장과 책갈피 메모를 카드로 뒤집으며 복습하세요.</p>
+        </div>
+        <button type="button" onclick="closeFlashcardModal()" class="text-sm opacity-60 hover:opacity-100 px-2 py-1">✕</button>
+      </div>
+
+      <div id="flashcard-body" class="min-h-[240px] flex flex-col justify-between">
+        <!-- Populated dynamically by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 🌐 Cloudflare Domain & Remote Access Center Modal -->
+  <div id="domain-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/65 backdrop-blur-xs p-4 overflow-y-auto">
+    <div class="w-full max-w-xl rounded-2xl p-6 shadow-2xl border my-8 space-y-5" style="background: var(--bg-surface); border-color: var(--border-color);">
+      <div class="flex items-center justify-between border-b pb-3" style="border-color: var(--border-color);">
+        <div>
+          <h3 class="text-base font-bold flex items-center gap-2">🌐 외부 접속 & 내 도메인(Cloudflare) 연결 센터</h3>
+          <p class="text-xs opacity-75 mt-0.5">공유기 포트포워딩 없이 어디서나 내 도메인(예: obsibook.yourdomain.com)으로 접속하세요.</p>
+        </div>
+        <button type="button" onclick="closeDomainModal()" class="text-sm opacity-60 hover:opacity-100 px-2 py-1">✕</button>
+      </div>
+
+      <!-- Current Live Tunnel Status Banner -->
+      <div class="p-4 rounded-xl border space-y-2" style="background: var(--bg-primary); border-color: var(--border-color);">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span id="tunnel-status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+            <span id="tunnel-status-title" class="text-xs font-bold">외부 접속 터널 상태 확인 중...</span>
+          </div>
+          <button type="button" id="btn-stop-tunnel" onclick="stopTunnel()" class="hidden px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-500/15 text-red-600 border border-red-500/30">
+            터널 중지
+          </button>
+        </div>
+        <div id="tunnel-active-url-box" class="hidden pt-1">
+          <div class="flex items-center justify-between gap-2 p-2.5 rounded-lg border" style="background: var(--bg-surface); border-color: var(--accent-color);">
+            <a id="tunnel-active-url" href="#" target="_blank" rel="noopener" class="text-xs font-bold truncate underline" style="color: var(--accent-color);"></a>
+            <button type="button" onclick="copyActiveTunnelUrl()" class="px-2.5 py-1 rounded-md text-[11px] font-bold text-white flex-shrink-0" style="background: var(--accent-color);">
+              📋 주소 복사
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. Custom Domain Setup -->
+      <div class="space-y-3 border rounded-xl p-4" style="border-color: var(--border-color); background: var(--bg-secondary);">
+        <div class="text-xs font-bold flex items-center justify-between">
+          <span>🎯 1. 내 Cloudflare 도메인 영구 연결 (권장)</span>
+          <span class="text-[11px] px-2 py-0.5 rounded-full" style="background: var(--accent-soft); color: var(--accent-color);">자동 DNS & SSL</span>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-semibold mb-1 opacity-80">연결할 서브도메인 주소 (예: obsibook.yourdomain.com)</label>
+          <input
+            type="text"
+            id="cf-domain-input"
+            value=""
+            placeholder="obsibook.yourdomain.com"
+            class="w-full px-3 py-2 rounded-xl border text-xs font-semibold focus:outline-none"
+            style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+          />
+        </div>
+
+        <div class="space-y-1.5 pt-1">
+          <label class="block text-[11px] font-semibold opacity-80">
+            방법 A: Cloudflare Zero Trust 터널 토큰(`eyJ...`) 붙여넣기
+          </label>
+          <div class="flex gap-2">
+            <input
+              type="password"
+              id="cf-token-input"
+              placeholder="eyJhIjoi... 또는 cloudflared service install eyJ... 전체 붙여넣기"
+              class="flex-1 px-3 py-2 rounded-xl border text-xs focus:outline-none"
+              style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+            />
+            <button
+              type="button"
+              onclick="connectWithTunnelToken()"
+              class="px-3.5 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0"
+              style="background: var(--accent-color);"
+            >
+              🎫 토큰으로 연결
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t space-y-2" style="border-color: var(--border-color);">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-semibold opacity-85">방법 B: 토큰 없이 Cloudflare 로그인으로 자동 DNS 등록</span>
+            <button
+              type="button"
+              onclick="startCloudflareLoginFlow()"
+              class="px-3 py-1.5 rounded-xl text-xs font-bold border transition hover:opacity-90"
+              style="background: var(--bg-surface); border-color: var(--accent-color); color: var(--accent-color);"
+            >
+              🔑 Cloudflare 인증 링크 생성
+            </button>
+          </div>
+
+          <div id="cf-login-url-box" class="hidden p-3 rounded-xl border space-y-2" style="background: var(--bg-surface); border-color: var(--accent-color);">
+            <p class="text-[11px] font-semibold">
+              👇 아래 버튼을 눌러 Cloudflare에서 도메인을 선택해 승인해 주세요:
+            </p>
+            <a
+              id="cf-login-url-link"
+              href="#"
+              target="_blank"
+              rel="noopener"
+              class="block w-full text-center py-2 rounded-lg text-xs font-bold text-white"
+              style="background: var(--accent-color);"
+            >
+              🔗 Cloudflare 도메인 승인 페이지 열기 (새 창)
+            </a>
+            <p class="text-[11px] opacity-75">
+              💡 승인 후 자동으로 연결되거나, 브라우저에 <code>cert.pem</code> 파일이 다운로드되면 아래에 파일을 선택해 주세요:
+            </p>
+            <input
+              type="file"
+              id="cf-cert-file-input"
+              accept=".pem"
+              onchange="handleCertFileUpload(this)"
+              class="block w-full text-[11px]"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Instant Quick HTTPS Tunnel -->
+      <div class="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3" style="border-color: var(--border-color); background: var(--bg-primary);">
+        <div>
+          <div class="text-xs font-bold">⚡ 2. 도메인 설정 없이 1초 임시 외부 접속 주소 발급</div>
+          <div class="text-[11px] opacity-75">지금 당장 외부에서 접속해야 할 때 무료 HTTPS(`*.trycloudflare.com`) 주소를 즉시 생성합니다.</div>
+        </div>
+        <button
+          type="button"
+          onclick="startQuickTunnel()"
+          class="px-3.5 py-2 rounded-xl text-xs font-bold border flex-shrink-0 hover:opacity-90"
+          style="background: var(--bg-surface); border-color: var(--border-color);"
+        >
+          ⚡ 임시 주소 즉시 생성
+        </button>
+      </div>
+
+      <!-- 3. External Access Password Protection -->
+      <div class="p-4 rounded-xl border space-y-2" style="border-color: var(--border-color); background: var(--bg-primary);">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold">🔒 3. 외부 접속 보안: 서재 열람 비밀번호 설정</span>
+          <span id="pwd-status-badge" class="text-[11px] font-semibold px-2 py-0.5 rounded-full"></span>
+        </div>
+        <div class="flex gap-2">
+          <input
+            type="password"
+            id="new-app-password-input"
+            placeholder="새 비밀번호 입력 (비워두고 저장하면 잠금 해제)"
+            class="flex-1 px-3 py-2 rounded-xl border text-xs focus:outline-none"
+            style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+          />
+          <button
+            type="button"
+            onclick="saveLibraryPassword()"
+            class="px-3.5 py-2 rounded-xl text-xs font-bold border"
+            style="background: var(--bg-surface); border-color: var(--border-color);"
+          >
+            비밀번호 저장
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main App Shell -->
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="app-header">
+      <!-- Left Navigation Controls: Sidebar Toggle, Back/Forward, Home, Quick Folder Switcher -->
+      <div class="flex items-center gap-1.5 min-w-0">
+        <button
+          type="button"
+          id="btn-toggle-left"
+          onclick="toggleLeftSidebar()"
+          title="좌측 실제 폴더 트리 열기/닫기"
+          class="p-2 rounded-lg hover:opacity-80 border text-xs font-bold"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+        >
+          ☰
+        </button>
+
+        <!-- Back / Forward History Buttons -->
+        <div class="flex items-center rounded-lg border overflow-hidden" style="border-color: var(--border-color); background: var(--bg-secondary);">
+          <button
+            type="button"
+            id="btn-nav-back"
+            onclick="navigateBack()"
+            disabled
+            title="이전 보던 문서/폴더로 뒤로 가기 (Alt+←)"
+            class="px-2 py-1.5 text-xs font-bold disabled:opacity-30 hover:opacity-80 transition"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            id="btn-nav-forward"
+            onclick="navigateForward()"
+            disabled
+            title="앞으로 가기 (Alt+→)"
+            class="px-2 py-1.5 text-xs font-bold border-l disabled:opacity-30 hover:opacity-80 transition"
+            style="border-color: var(--border-color);"
+          >
+            →
+          </button>
+        </div>
+
+        <!-- Home Dashboard Button -->
+        <button
+          type="button"
+          onclick="showDashboard()"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:opacity-85 transition text-left border"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+          title="서재 홈 대시보드로 이동"
+        >
+          <span class="text-sm">🏠</span>
+          <span class="font-bold text-xs sm:text-sm truncate max-w-[110px] sm:max-w-[160px]" id="header-vault-title">ObsiBook</span>
+        </button>
+
+        <!-- Quick Folder/File Switcher Button -->
+        <button
+          type="button"
+          onclick="openQuickSwitcher()"
+          class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-semibold hover:opacity-90 transition"
+          style="border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color);"
+          title="어디서나 다른 폴더나 파일로 빠르게 이동 (Ctrl+K)"
+        >
+          📂 <span class="hidden sm:inline">폴더·파일 이동</span>
+        </button>
+      </div>
+
+      <!-- Right Study & E-Book Action Toolbar -->
+      <div class="flex items-center gap-1.5">
+        <!-- Study Level & Streak Pill -->
+        <button
+          type="button"
+          onclick="showDashboard()"
+          id="header-study-badge"
+          class="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border"
+          style="background: var(--bg-secondary); border-color: var(--border-color);"
+          title="나의 학습 레벨 및 연속 공부 스트릭"
+        >
+          <span id="hdr-level-text">🌱 Lv.1</span>
+          <span class="opacity-40">|</span>
+          <span id="hdr-streak-text" class="text-amber-600">🔥 1일</span>
+        </button>
+
+        <!-- Pomodoro Focus Timer Widget -->
+        <div class="relative">
+          <button
+            type="button"
+            id="btn-pomodoro"
+            onclick="togglePomodoroPopover()"
+            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition"
+            style="border-color: var(--border-color); background: var(--bg-secondary);"
+            title="뽀모도로 집중 타이머"
+          >
+            🍅 <span id="pomodoro-time-label">25:00</span>
+          </button>
+
+          <!-- Pomodoro Popover -->
+          <div
+            id="pomodoro-popover"
+            class="hidden fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-72 rounded-2xl p-4 shadow-2xl border z-50 space-y-3"
+            style="background: var(--bg-surface); border-color: var(--border-color);"
+          >
+            <div class="flex items-center justify-between border-b pb-2" style="border-color: var(--border-color);">
+              <span class="text-xs font-bold">🍅 뽀모도로 집중 타이머</span>
+              <button type="button" onclick="togglePomodoroPopover()" class="text-xs opacity-60 hover:opacity-100">✕</button>
+            </div>
+            <div class="text-center py-2">
+              <div id="pomo-mode-badge" class="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold mb-1" style="background: var(--accent-soft); color: var(--accent-color);">집중 공부 시간</div>
+              <div id="pomo-big-display" class="text-3xl font-extrabold tracking-tight my-1">25:00</div>
+              <div class="text-[11px] opacity-70">완료 시 +100 XP 획득!</div>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" id="btn-pomo-start" onclick="startOrPausePomodoro()" class="flex-1 py-2 rounded-xl text-xs font-bold text-white" style="background: var(--accent-color);">▶️ 시작</button>
+              <button type="button" onclick="resetPomodoro()" class="px-3 py-2 rounded-xl text-xs font-semibold border" style="border-color: var(--border-color);">초기화</button>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5 pt-1 text-[11px]">
+              <button type="button" onclick="setPomodoroPreset(25, '집중 25분')" class="py-1.5 rounded-lg border font-semibold" style="border-color: var(--border-color);">25분 집중</button>
+              <button type="button" onclick="setPomodoroPreset(50, '집중 50분')" class="py-1.5 rounded-lg border font-semibold" style="border-color: var(--border-color);">50분 집중</button>
+              <button type="button" onclick="setPomodoroPreset(5, '휴식 5분')" class="py-1.5 rounded-lg border font-semibold" style="border-color: var(--border-color);">5분 휴식</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Recall Cloze Mode Toggle Button -->
+        <button
+          type="button"
+          id="btn-cloze-header"
+          onclick="toggleClozeMode()"
+          class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+          title="굵은 글씨·형광펜·핵심용어를 빈칸으로 가려 암기 테스트하기 (단축키 M)"
+        >
+          🧠 <span class="hidden md:inline">암기모드</span>
+        </button>
+
+        <!-- Flashcard Deck Button -->
+        <button
+          type="button"
+          onclick="openFlashcardModal()"
+          class="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+          title="저장한 형광펜과 책갈피를 플래시카드로 복습하기"
+        >
+          🃏 <span class="hidden xl:inline">카드복습</span>
+        </button>
+
+        <!-- Typography & Eye-Comfort Theme Settings Button -->
+        <div class="relative">
+          <button
+            type="button"
+            onclick="toggleSettingsPopover()"
+            class="px-2.5 py-1.5 rounded-lg border text-xs font-bold transition"
+            style="border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color);"
+            title="눈이 편안한 배경 색상, 글꼴, 줄간격, 블루라이트 보호 필터 설정"
+          >
+            Aa <span class="hidden sm:inline">눈편한 설정</span>
+          </button>
+
+          <!-- Typography & Theme Popover -->
+          <div
+            id="settings-popover"
+            class="hidden fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-[calc(100vw-16px)] max-w-sm rounded-2xl p-4 shadow-2xl border z-50 space-y-4 max-h-[82vh] overflow-y-auto"
+            style="background: var(--bg-surface); border-color: var(--border-color);"
+          >
+            <div class="flex items-center justify-between border-b pb-2" style="border-color: var(--border-color);">
+              <span class="text-xs font-bold">🎨 눈이 편안한 독서·학습 환경 설정</span>
+              <button type="button" onclick="toggleSettingsPopover()" class="text-xs opacity-60 hover:opacity-100">✕</button>
+            </div>
+
+            <!-- 1. Eye-Comfort Theme Selector -->
+            <div>
+              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">눈 피로 방지 배경 테마</label>
+              <div class="grid grid-cols-3 gap-1.5">
+                <button type="button" onclick="applySetting('theme', 'warm_paper')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#f4efe6; color:#2b2620; border-color:#d5c7b2;">🌾 웜 페이퍼</button>
+                <button type="button" onclick="applySetting('theme', 'forest')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#eaf1ec; color:#1e2d24; border-color:#bcd2c3;">🌿 칠판 그린</button>
+                <button type="button" onclick="applySetting('theme', 'sepia')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#eee4d3; color:#2f251b; border-color:#cbb99c;">📜 세피아</button>
+                <button type="button" onclick="applySetting('theme', 'soft_light')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#f6f5f2; color:#22252a; border-color:#dcdad2;">☁️ 소프트밀크</button>
+                <button type="button" onclick="applySetting('theme', 'dark')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#18191c; color:#dcd8d0; border-color:#343842;">🌙 웜 다크</button>
+                <button type="button" onclick="applySetting('theme', 'deep_forest')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#131b16; color:#d4e2da; border-color:#2d4035;">🌲 포레스트밤</button>
+              </div>
+            </div>
+
+            <!-- 2. Korean E-Book Font Family -->
+            <div>
+              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">본문 독서 글꼴 (전자책 전용 폰트)</label>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button type="button" onclick="applySetting('fontFamily', 'ridi')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'RIDIBatang', serif;">📖 리디바탕 (이북 추천)</button>
+                <button type="button" onclick="applySetting('fontFamily', 'maru')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'MaruBuri', serif;">✒️ 마루부리 (따뜻한 명조)</button>
+                <button type="button" onclick="applySetting('fontFamily', 'gowun')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'Gowun Batang', serif;">🌾 고운바탕 (부드러운 획)</button>
+                <button type="button" onclick="applySetting('fontFamily', 'sans')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'Pretendard', sans-serif;">📝 프리텐다드 (깔끔 고딕)</button>
+              </div>
+            </div>
+
+            <!-- 3. Font Size & Line Height -->
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-semibold mb-1 opacity-80">글자 크기 (<span id="lbl-font-size">18px</span>)</label>
+                <div class="flex items-center gap-1">
+                  <button type="button" onclick="stepSetting('fontSize', -1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">A-</button>
+                  <button type="button" onclick="stepSetting('fontSize', 1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">A+</button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold mb-1 opacity-80">줄간격 (<span id="lbl-line-height">1.9</span>)</label>
+                <div class="flex items-center gap-1">
+                  <button type="button" onclick="stepSetting('lineHeight', -0.1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">좁게</button>
+                  <button type="button" onclick="stepSetting('lineHeight', 0.1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">넓게</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. Reading Width -->
+            <div>
+              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">페이지 본문 폭</label>
+              <div class="grid grid-cols-4 gap-1">
+                <button type="button" onclick="applySetting('maxWidth', '680px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">좁게</button>
+                <button type="button" onclick="applySetting('maxWidth', '820px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">표준</button>
+                <button type="button" onclick="applySetting('maxWidth', '1040px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">넓게</button>
+                <button type="button" onclick="applySetting('maxWidth', '100%')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">전체</button>
+              </div>
+            </div>
+
+            <!-- 5. Eye-Care Warm Filter Slider -->
+            <div>
+              <div class="flex items-center justify-between text-[11px] font-semibold mb-1 opacity-80">
+                <span>🌙 안구 보호 블루라이트 차단 필터</span>
+                <span id="lbl-eyecare-val">0%</span>
+              </div>
+              <input
+                type="range"
+                id="rng-eyecare"
+                min="0"
+                max="35"
+                step="5"
+                value="0"
+                oninput="applySetting('eyeCareFilter', Number(this.value))"
+                class="w-full accent-amber-600 cursor-pointer"
+              />
+            </div>
+
+            <!-- Auto Scroll Restore Toggle -->
+            <label class="flex items-center justify-between text-xs pt-1 cursor-pointer">
+              <span>문서 열 때 이전 읽던 위치로 자동 이동</span>
+              <input type="checkbox" id="chk-auto-restore" checked onchange="applySetting('autoRestoreScroll', this.checked)" class="rounded" />
+            </label>
+          </div>
+        </div>
+
+        <!-- Cloudflare Domain Button -->
+        <button
+          type="button"
+          id="btn-domain-modal"
+          onclick="openDomainModal()"
+          class="p-2 rounded-lg border text-xs font-bold transition"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+          title="외부 접속 및 도메인(Cloudflare) 설정"
+        >
+          🌐
+        </button>
+
+        <!-- Toggle Right Study/TOC Sidebar -->
+        <button
+          type="button"
+          id="btn-toggle-right"
+          onclick="toggleRightSidebar()"
+          class="px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1"
+          style="border-color: var(--border-color); background: var(--bg-secondary);"
+          title="우측 목차·요약노트·형광펜 패널 열기/닫기"
+        >
+          ✏️ <span class="hidden md:inline">학습패널</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Multi-Tab Open Documents & Active Folder Bar (Easy Jumping While Studying) -->
+    <div id="study-tabs-bar" class="study-tabs-bar">
+      <!-- Populated dynamically by app.js -->
+    </div>
+
+    <!-- Main Body -->
+    <div class="app-body">
+      <!-- Mobile/Tablet Drawer Backdrop -->
+      <div id="mobile-backdrop" class="mobile-backdrop" onclick="closeMobileDrawers()"></div>
+
+      <!-- Left Sidebar: True Nested Folder Tree Explorer, Highlights/Bookmarks, Tags -->
+      <aside id="sidebar-left" class="sidebar-left">
+        <!-- Search Input -->
+        <div class="p-2.5 border-b space-y-2" style="border-color: var(--border-color);">
+          <div class="relative">
+            <input
+              type="text"
+              id="vault-search-input"
+              placeholder="🔍 파일명, 본문, #태그 통합 검색..."
+              oninput="handleSearchInput(this.value)"
+              class="w-full pl-3 pr-8 py-2 rounded-xl border text-xs focus:outline-none"
+              style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+            />
+            <button
+              type="button"
+              id="btn-clear-search"
+              onclick="clearSearch()"
+              class="hidden absolute right-2.5 top-2 text-xs opacity-60 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- Sidebar Navigation Tabs -->
+        <div class="grid grid-cols-3 border-b text-xs font-semibold" style="border-color: var(--border-color);">
+          <button type="button" id="tab-btn-folders" onclick="switchSidebarTab('folders')" class="py-2 border-b-2" style="border-color: var(--accent-color); color: var(--accent-color);">
+            📂 폴더트리
+          </button>
+          <button type="button" id="tab-btn-bookmarks" onclick="switchSidebarTab('bookmarks')" class="py-2 border-b-2 border-transparent opacity-70 hover:opacity-100">
+            🖍️ 학습노트 <span id="sidebar-bm-count" class="text-[10px]"></span>
+          </button>
+          <button type="button" id="tab-btn-tags" onclick="switchSidebarTab('tags')" class="py-2 border-b-2 border-transparent opacity-70 hover:opacity-100">
+            🏷️ 태그
+          </button>
+        </div>
+
+        <!-- Tree Helper Bar (Visible on Folders Tab) -->
+        <div id="sidebar-tree-controls" class="px-3 py-1.5 border-b flex items-center justify-between text-[11px]" style="border-color: var(--border-color); background: var(--bg-primary); color: var(--text-muted);">
+          <span>실제 폴더·하위폴더 구조</span>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="expandAllFolders()" class="hover:underline font-semibold">모두 펼치기</button>
+            <span>·</span>
+            <button type="button" onclick="collapseAllFolders()" class="hover:underline font-semibold">모두 접기</button>
+          </div>
+        </div>
+
+        <!-- Sidebar Scrollable List -->
+        <div id="sidebar-content" class="flex-1 overflow-y-auto p-2.5 space-y-1">
+          <!-- Populated dynamically by app.js -->
+        </div>
+
+        <!-- Sidebar Footer Summary & Sync Progress Card -->
+        <div class="p-2.5 border-t text-[11px] space-y-2" style="border-color: var(--border-color); color: var(--text-muted);">
+          <div class="flex items-center justify-between">
+            <span id="sidebar-footer-stats">총 0개 문서 · 완독 0</span>
+            <button type="button" onclick="refreshLibrary(true)" class="hover:underline font-semibold" title="새로 추가된 옵시디언 폴더/문서 다시 스캔">🔄 새로고침</button>
+          </div>
+          <div id="cache-status-card" class="p-2.5 rounded-xl border space-y-1.5 transition-all duration-300" style="background: var(--bg-surface); border-color: var(--border-color);">
+            <div class="flex items-center justify-between gap-1.5">
+              <div id="cache-status-badge" class="text-[11px] font-bold truncate" style="color: var(--accent-color);">
+                ⏳ 서재 동기화 준비 중...
+              </div>
+              <span id="cache-status-eta" class="text-[10px] font-bold flex-shrink-0 px-2 py-0.5 rounded-full" style="background: var(--accent-soft); color: var(--accent-color);">
+                0%
+              </span>
+            </div>
+            <div class="w-full h-1.5 rounded-full overflow-hidden" style="background: var(--bg-secondary);">
+              <div id="cache-progress-bar" class="h-full rounded-full transition-all duration-300" style="width: 8%; background: var(--accent-color);"></div>
+            </div>
+            <div id="cache-status-subtext" class="text-[10px] truncate opacity-85">
+              볼트 폴더와 문서를 확인하고 있습니다...
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center Workspace (Main Reader + Optional Split Reference Pane) -->
+      <div class="center-workspace">
+        <main id="reader-viewport" class="reader-viewport">
+          <!-- Floating Resume Toast Banner -->
+          <div
+            id="resume-toast"
+            class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2.5 rounded-full shadow-xl border flex items-center gap-3 text-xs font-semibold"
+            style="background: var(--bg-surface); border-color: var(--accent-color); color: var(--text-primary);"
+          >
+            <span id="resume-toast-text">📍 이전에 읽던 위치(0%)가 있습니다.</span>
+            <button
+              type="button"
+              id="btn-resume-jump"
+              class="px-3 py-1 rounded-full text-white"
+              style="background: var(--accent-color);"
+            >
+              이어 읽기
+            </button>
+            <button type="button" onclick="hideResumeToast()" class="opacity-60 hover:opacity-100">✕</button>
+          </div>
+
+          <!-- ===============================================================
+               VIEW 1: Library Home & Gamified Study Dashboard
+               =============================================================== -->
+          <div id="dashboard-view" class="reader-container space-y-7">
+            <!-- Gamified Study Status Banner -->
+            <div class="rounded-2xl p-6 border shadow-sm space-y-4" style="background: var(--bg-surface); border-color: var(--border-color);">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="space-y-1">
+                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold" style="background: var(--accent-soft); color: var(--accent-color);">
+                    <span id="dash-level-badge">🌱 Lv.1 입문 탐구자</span>
+                    <span>·</span>
+                    <span id="dash-streak-badge">🔥 연속 1일 학습 중</span>
+                  </div>
+                  <h1 class="text-2xl font-bold pt-1" id="dash-title">내 옵시디언 스터디 & 전자책 서재</h1>
+                  <p class="text-xs" style="color: var(--text-secondary);">
+                    실제 폴더·하위폴더 구조와 내가 저장한 파일명 그대로 탐색하고, 빈칸 암기·형광펜·플래시카드로 재밌게 공부하세요.
+                  </p>
+                </div>
+
+                <!-- Quick Study Action Buttons -->
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onclick="openQuickSwitcher()"
+                    class="px-3.5 py-2.5 rounded-xl text-xs font-bold border transition hover:shadow-sm"
+                    style="background: var(--bg-primary); border-color: var(--border-color);"
+                  >
+                    🧭 빠른 폴더/파일 찾기
+                  </button>
+                  <button
+                    type="button"
+                    onclick="openFlashcardModal()"
+                    class="px-3.5 py-2.5 rounded-xl text-xs font-bold text-white transition shadow-sm"
+                    style="background: var(--accent-color);"
+                  >
+                    🃏 암기 플래시카드 복습
+                  </button>
+                </div>
+              </div>
+
+              <!-- XP Progress Bar -->
+              <div class="p-3.5 rounded-xl border space-y-1.5" style="background: var(--bg-primary); border-color: var(--border-color);">
+                <div class="flex items-center justify-between text-xs font-semibold">
+                  <span id="dash-xp-label">학습 경험치 0 XP</span>
+                  <span id="dash-next-level-label" style="color: var(--text-muted);">다음 레벨까지 200 XP</span>
+                </div>
+                <div class="w-full h-2.5 rounded-full overflow-hidden" style="background: var(--bg-secondary);">
+                  <div id="dash-xp-bar" class="h-full rounded-full transition-all duration-300" style="width: 5%; background: linear-gradient(90deg, var(--accent-color), #10b981);"></div>
+                </div>
+              </div>
+
+              <!-- Study Metrics Grid -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+                <div class="p-3 rounded-xl border" style="background: var(--bg-primary); border-color: var(--border-color);">
+                  <div class="text-lg font-extrabold" id="stat-total-docs">0</div>
+                  <div class="text-[11px]" style="color: var(--text-muted);">전체 파일 수</div>
+                </div>
+                <div class="p-3 rounded-xl border" style="background: var(--bg-primary); border-color: var(--border-color);">
+                  <div class="text-lg font-extrabold text-amber-600" id="stat-reading-docs">0</div>
+                  <div class="text-[11px]" style="color: var(--text-muted);">공부 중인 문서</div>
+                </div>
+                <div class="p-3 rounded-xl border" style="background: var(--bg-primary); border-color: var(--border-color);">
+                  <div class="text-lg font-extrabold text-emerald-600" id="stat-completed-docs">0</div>
+                  <div class="text-[11px]" style="color: var(--text-muted);">완독 완료</div>
+                </div>
+                <div class="p-3 rounded-xl border" style="background: var(--bg-primary); border-color: var(--border-color);">
+                  <div class="text-lg font-extrabold" style="color: var(--accent-color);" id="stat-study-highlights">0</div>
+                  <div class="text-[11px]" style="color: var(--text-muted);">형광펜 & 암기카드</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Continue Reading Hero Card -->
+            <div id="continue-reading-section" class="hidden">
+              <h2 class="text-sm font-bold mb-2.5 flex items-center gap-1.5">⏱️ 마지막으로 공부하던 문서 이어서 보기</h2>
+              <div id="continue-reading-card"></div>
+            </div>
+
+            <!-- Vault Top-Level Folders (Click to Open Real Folder Explorer!) -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-bold flex items-center gap-1.5">📂 내 볼트 & 최상위 폴더 (클릭하면 하위 폴더·파일 탐색기로 들어갑니다)</h2>
+              </div>
+              <div id="dash-folders-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+            </div>
+
+            <!-- Recent Highlights & Bookmarks -->
+            <div id="dash-bookmarks-section" class="hidden">
+              <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-bold flex items-center gap-1.5">🖍️ 최근 밑줄 친 형광펜 & 책갈피 메모</h2>
+                <button type="button" onclick="openFlashcardModal()" class="text-xs font-bold hover:underline" style="color: var(--accent-color);">🃏 카드로 전체 복습하기 →</button>
+              </div>
+              <div id="dash-bookmarks-list" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+            </div>
+          </div>
+
+          <!-- ===============================================================
+               VIEW 2: Real Hierarchical Folder & File Explorer View
+               =============================================================== -->
+          <div id="folder-explorer-view" class="reader-container hidden space-y-6">
+            <!-- Explorer Header & Breadcrumb Navigation -->
+            <div class="rounded-2xl p-5 border shadow-sm space-y-3" style="background: var(--bg-surface); border-color: var(--border-color);">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div id="explorer-breadcrumbs" class="flex flex-wrap items-center gap-1 text-xs font-semibold"></div>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    id="btn-explorer-up"
+                    onclick="navigateUpFolder()"
+                    class="px-3 py-1.5 rounded-xl border text-xs font-bold hover:opacity-85 transition"
+                    style="background: var(--bg-primary); border-color: var(--border-color);"
+                  >
+                    ⬅ 상위 폴더로
+                  </button>
+                  <button
+                    type="button"
+                    onclick="showDashboard()"
+                    class="px-3 py-1.5 rounded-xl border text-xs font-semibold hover:opacity-85 transition"
+                    style="background: var(--bg-primary); border-color: var(--border-color);"
+                  >
+                    🏠 전체 볼트 홈
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <div>
+                  <h1 id="explorer-folder-title" class="text-xl sm:text-2xl font-bold flex items-center gap-2">📁 폴더명</h1>
+                  <p id="explorer-folder-summary" class="text-xs mt-0.5" style="color: var(--text-muted);"></p>
+                </div>
+
+                <!-- Filter & Sort within Current Folder -->
+                <div class="flex items-center gap-2">
+                  <input
+                    type="text"
+                    id="explorer-filter-input"
+                    placeholder="이 폴더 내 검색..."
+                    oninput="renderFolderExplorerContent()"
+                    class="px-3 py-1.5 rounded-xl border text-xs focus:outline-none w-40 sm:w-48"
+                    style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+                  />
+                  <select
+                    id="explorer-sort-select"
+                    onchange="renderFolderExplorerContent()"
+                    class="px-2.5 py-1.5 rounded-xl border text-xs font-semibold focus:outline-none"
+                    style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+                  >
+                    <option value="name">정렬: 실제 파일명순</option>
+                    <option value="recent">정렬: 최근 수정순</option>
+                    <option value="progress">정렬: 공부 진도순</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subfolders Section (Actual Nested Folders inside Current Folder) -->
+            <div id="explorer-subfolders-section" class="space-y-2.5">
+              <h2 class="text-xs font-bold uppercase tracking-wider px-1" style="color: var(--text-muted);" id="explorer-subfolders-heading">
+                📁 하위 폴더
+              </h2>
+              <div id="explorer-subfolders-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+            </div>
+
+            <!-- Direct Files Section (Files saved directly inside Current Folder) -->
+            <div id="explorer-files-section" class="space-y-2.5">
+              <h2 class="text-xs font-bold uppercase tracking-wider px-1" style="color: var(--text-muted);" id="explorer-files-heading">
+                📄 이 폴더의 파일
+              </h2>
+              <div id="explorer-files-list" class="space-y-2"></div>
+            </div>
+          </div>
+
+          <!-- ===============================================================
+               VIEW 3: Document E-Book Reader & Interactive Study View
+               =============================================================== -->
+          <div id="document-view" class="reader-container hidden">
+            <!-- Top Interactive Folder Path & Sibling Switcher Bar -->
+            <div class="mb-4 p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2" style="background: var(--bg-surface); border-color: var(--border-color);">
+              <!-- Clickable Folder Breadcrumbs (Jump to any parent folder easily!) -->
+              <div id="doc-interactive-breadcrumbs" class="flex flex-wrap items-center gap-1 text-xs font-semibold"></div>
+
+              <!-- Quick Sibling Document Selector & Parent Folder Button -->
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-doc-go-folder"
+                  onclick="openCurrentDocFolder()"
+                  class="px-2.5 py-1 rounded-lg border text-xs font-bold hover:opacity-85 transition"
+                  style="background: var(--bg-primary); border-color: var(--border-color); color: var(--accent-color);"
+                  title="이 문서가 들어있는 폴더 목록 화면으로 이동"
+                >
+                  📂 이 폴더 목록 보기
+                </button>
+                <select
+                  id="doc-sibling-select"
+                  onchange="if(this.value) openDocument(this.value)"
+                  class="px-2.5 py-1 rounded-lg border text-xs font-semibold max-w-[200px] truncate focus:outline-none"
+                  style="background: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"
+                  title="같은 폴더에 있는 다른 파일로 바로 전환"
+                ></select>
+              </div>
+            </div>
+
+            <!-- Document Metadata & Study Action Header Card -->
+            <div class="rounded-2xl p-6 mb-6 border shadow-sm" style="background: var(--bg-surface); border-color: var(--border-color);">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2">
+                  <span id="doc-folder-badge" onclick="openCurrentDocFolder()" class="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer hover:opacity-80" style="background: var(--accent-soft); color: var(--accent-color);"></span>
+                  <span id="header-progress-pill" class="px-2.5 py-1 rounded-full text-xs font-bold border" style="background: var(--bg-primary); color: var(--accent-color); border-color: var(--border-color);">0%</span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onclick="openSplitReferenceChooser()"
+                    class="px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition hover:opacity-85"
+                    style="border-color: var(--border-color); background: var(--bg-primary);"
+                    title="옆에 다른 문서를 동시에 띄워놓고 비교하며 공부하기"
+                  >
+                    ◫ 비교창 열기
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-doc-bookmark-quick"
+                    onclick="openBookmarkModal()"
+                    class="px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition hover:opacity-85"
+                    style="border-color: var(--border-color); background: var(--bg-primary);"
+                  >
+                    🔖 책갈피·메모
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-doc-complete"
+                    onclick="toggleCurrentDocCompleted()"
+                    class="px-3 py-1.5 rounded-xl border text-xs font-bold transition"
+                    style="border-color: var(--border-color); background: var(--bg-primary);"
+                  >
+                    ○ 완독 표시
+                  </button>
+                </div>
+              </div>
+
+              <!-- Exact Saved Filename Title -->
+              <h1 id="doc-main-title" class="text-2xl sm:text-3xl font-bold leading-snug mb-1.5"></h1>
+              <!-- Optional Frontmatter/H1 Subtitle (if different from filename) -->
+              <p id="doc-subtitle-text" class="text-xs sm:text-sm mb-3 hidden" style="color: var(--text-secondary);"></p>
+
+              <div id="doc-meta-info" class="flex flex-wrap items-center gap-3 text-xs mb-3" style="color: var(--text-muted);"></div>
+              <div id="doc-frontmatter-pills" class="flex flex-wrap gap-1.5 mb-2"></div>
+              <div id="doc-tags-row" class="flex flex-wrap gap-1.5"></div>
+            </div>
+
+            <!-- 🧠 Interactive Study & Cloze Recall Bar -->
+            <div class="mb-6 p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs" style="background: var(--bg-surface); border-color: var(--border-color);">
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-cloze-bar"
+                  onclick="toggleClozeMode()"
+                  class="px-3 py-1.5 rounded-xl font-bold border transition"
+                  style="background: var(--bg-primary); border-color: var(--border-color);"
+                >
+                  🧠 빈칸 암기 가림막: OFF
+                </button>
+                <div id="cloze-controls-group" class="hidden flex-wrap items-center gap-1.5">
+                  <span id="cloze-score-badge" class="px-2.5 py-1 rounded-lg font-bold" style="background: var(--accent-soft); color: var(--accent-color);">
+                    확인 0 / 0
+                  </span>
+                  <button type="button" onclick="revealAllCloze(true)" class="px-2.5 py-1 rounded-lg border font-semibold" style="border-color: var(--border-color);">👁️ 정답 모두 보기</button>
+                  <button type="button" onclick="revealAllCloze(false)" class="px-2.5 py-1 rounded-lg border font-semibold" style="border-color: var(--border-color);">🙈 다시 모두 가리기</button>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  id="btn-view-mode"
+                  onclick="toggleViewMode()"
+                  class="px-2.5 py-1.5 rounded-xl border font-semibold"
+                  style="border-color: var(--border-color); background: var(--bg-primary);"
+                >
+                  📜 스크롤
+                </button>
+                <button
+                  type="button"
+                  id="btn-tts"
+                  onclick="toggleTTS()"
+                  class="px-2.5 py-1.5 rounded-xl border font-semibold"
+                  style="border-color: var(--border-color); background: var(--bg-primary);"
+                >
+                  🎧 낭독
+                </button>
+              </div>
+            </div>
+
+            <!-- Paginated Chapter Bar (Visible when ViewMode === 'paginated') -->
+            <div
+              id="paginated-toolbar"
+              class="hidden mb-6 p-3 rounded-xl border items-center justify-between text-xs font-semibold"
+              style="background: var(--bg-surface); border-color: var(--border-color);"
+            >
+              <button type="button" onclick="stepChapterPage(-1)" class="px-3 py-1.5 rounded-lg border" style="border-color: var(--border-color);">← 이전 챕터</button>
+              <span id="paginated-status">챕터 1 / 1</span>
+              <button type="button" onclick="stepChapterPage(1)" class="px-3 py-1.5 rounded-lg border" style="border-color: var(--border-color);">다음 챕터 →</button>
+            </div>
+
+            <!-- Rendered Obsidian Markdown Article -->
+            <article id="ebook-article" class="ebook-content"></article>
+
+            <!-- Bottom E-Book Chapter Navigation (Prev / Next Document & Back to Folder) -->
+            <div class="mt-14 pt-8 border-t space-y-4" style="border-color: var(--border-color);">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onclick="openCurrentDocFolder()"
+                  class="px-4 py-2 rounded-xl text-xs font-bold border transition hover:opacity-85"
+                  style="background: var(--bg-surface); border-color: var(--border-color);"
+                >
+                  📂 현재 폴더의 파일 목록으로 돌아가기
+                </button>
+                <button
+                  type="button"
+                  id="btn-bottom-complete"
+                  onclick="toggleCurrentDocCompleted()"
+                  class="px-4 py-2 rounded-xl text-xs font-bold border transition"
+                  style="border-color: var(--accent-color); color: var(--accent-color);"
+                >
+                  ✓ 이 문서 완독 체크하기 (+50 XP)
+                </button>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="doc-prev-next-nav"></div>
+            </div>
+          </div>
+        </main>
+
+        <!-- Secondary Split Reference Pane (Compare two notes side-by-side while studying!) -->
+        <aside id="split-reference-pane" class="split-reference-pane hidden">
+          <div class="p-2.5 border-b flex items-center justify-between gap-2" style="background: var(--bg-secondary); border-color: var(--border-color);">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+              <span class="text-xs font-bold flex-shrink-0">◫ 참고창:</span>
+              <select
+                id="split-doc-select"
+                onchange="if(this.value) loadSplitReferenceDoc(this.value)"
+                class="flex-1 px-2 py-1 rounded-lg border text-xs font-semibold truncate focus:outline-none"
+                style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+              ></select>
+            </div>
+            <button type="button" onclick="closeSplitReferencePane()" class="px-2 py-1 rounded-lg text-xs font-bold border" style="border-color: var(--border-color);">닫기 ✕</button>
+          </div>
+          <div id="split-reference-body" class="flex-1 overflow-y-auto p-5 ebook-content" style="font-size: 16px;">
+            <p class="text-xs opacity-60">비교해서 볼 문서를 위 목록에서 선택해 주세요.</p>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Right Sidebar: 3-Tab Study Panel (TOC | Study Scratchpad | Highlights & Bookmarks) -->
+      <aside id="sidebar-right" class="sidebar-right collapsed">
+        <div class="grid grid-cols-3 border-b text-xs font-bold" style="border-color: var(--border-color);">
+          <button type="button" id="rtab-btn-toc" onclick="switchRightTab('toc')" class="py-2.5 border-b-2" style="border-color: var(--accent-color); color: var(--accent-color);">
+            📑 목차
+          </button>
+          <button type="button" id="rtab-btn-note" onclick="switchRightTab('note')" class="py-2.5 border-b-2 border-transparent opacity-70 hover:opacity-100">
+            ✏️ 요약노트
+          </button>
+          <button type="button" id="rtab-btn-hl" onclick="switchRightTab('hl')" class="py-2.5 border-b-2 border-transparent opacity-70 hover:opacity-100">
+            🖍️ 형광펜
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3">
+          <!-- Tab 1: Table of Contents -->
+          <div id="rtab-panel-toc" class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold opacity-75">🧭 이 문서의 섹션 목차</span>
+              <button type="button" onclick="toggleRightSidebar()" class="text-xs opacity-60 hover:opacity-100 lg:hidden">닫기 ✕</button>
+            </div>
+            <div id="right-toc-list" class="space-y-1 text-xs">
+              <p class="text-xs opacity-60">문서를 선택하면 목차가 표시됩니다.</p>
+            </div>
+          </div>
+
+          <!-- Tab 2: Personal Study Scratchpad Note -->
+          <div id="rtab-panel-note" class="hidden h-full flex flex-col space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold opacity-80">✏️ 내 요약 정리장 (자동 저장)</span>
+              <button type="button" onclick="copyStudyNote()" class="text-[11px] font-bold underline" style="color: var(--accent-color);">📋 전체 복사</button>
+            </div>
+            <p class="text-[11px] opacity-65">원본 옵시디언 파일은 수정되지 않으며, 이 문서 전용 개인 학습 노트로 안전하게 보관됩니다.</p>
+            <textarea
+              id="study-note-textarea"
+              oninput="scheduleStudyNoteSave()"
+              placeholder="문서를 읽으면서 핵심 요약, 내 생각, 시험 예상 문제를 자유롭게 정리해 보세요..."
+              class="w-full flex-1 min-h-[320px] p-3 rounded-xl border text-xs leading-relaxed focus:outline-none resize-none"
+              style="background: var(--bg-surface); border-color: var(--border-color); color: var(--text-primary);"
+            ></textarea>
+            <div id="study-note-status" class="text-[11px] text-right opacity-60">자동 저장 대기 중</div>
+          </div>
+
+          <!-- Tab 3: In-Document Highlights & Bookmarks -->
+          <div id="rtab-panel-hl" class="hidden space-y-4">
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[11px] font-bold opacity-80">🖍️ 이 문서의 형광펜 & 암기카드</span>
+                <button type="button" onclick="openBookmarkModal()" class="text-[11px] font-bold underline" style="color: var(--accent-color);">+ 추가</button>
+              </div>
+              <div id="right-doc-highlights-list" class="space-y-2"></div>
+            </div>
+            <div class="border-t pt-3" style="border-color: var(--border-color);">
+              <div class="text-[11px] font-bold mb-2 opacity-80">🔖 이 문서의 책갈피</div>
+              <div id="right-doc-bookmarks-list" class="space-y-1.5"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=3.3.0"></script>
+</body>
+</html>

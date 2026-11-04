@@ -1,0 +1,30 @@
+services:
+  obsibook:
+    image: kimmingil/obsibook:latest
+    build: .
+    container_name: obsibook_reader
+    user: "${PUID:-1026}:${PGID:-100}"
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-18505}:8500"
+    volumes:
+      - "${OBSIDIAN_VAULT_PATH:-./sample_vault}:/vault:ro"
+      - "${DATA_HOST_PATH:-./data}:/app/data"
+      - ./app.py:/app/app.py:ro
+      - ./modules:/app/modules:ro
+      - ./static:/app/static:ro
+    environment:
+      - TZ=Asia/Seoul
+      - OBSIDIAN_VAULT_PATH=/vault
+      - DATA_DIR=/app/data
+      - VAULT_TITLE=${VAULT_TITLE:-ObsiBook Library}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - APP_SECRET=${APP_SECRET:-obsibook-secret-key}
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: obsibook_cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - obsibook

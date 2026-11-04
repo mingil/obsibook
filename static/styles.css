@@ -1,0 +1,974 @@
+/* =====================================================================
+   ObsiBook v2.0 — Eye-Comfort Study & E-Book Typography Stylesheet
+   ===================================================================== */
+
+/* Korean E-Book Webfonts: RIDIBatang & MaruBuri */
+@font-face {
+  font-family: 'RIDIBatang';
+  src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_twelve@1.0/RIDIBatang.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MaruBuri';
+  src: url('https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MaruBuri';
+  src: url('https://hangeul.pstatic.net/hangeul_static/webfont/MaruBuri/MaruBuri-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* 1. Default Theme: Warm Paper (눈이 가장 편안한 미색 서적 용지) */
+  --bg-primary: #f4efe6;
+  --bg-secondary: #eae3d5;
+  --bg-surface: #faf6ee;
+  --bg-elevated: #fdfbf7;
+  --text-primary: #2b2620;
+  --text-secondary: #574d42;
+  --text-muted: #877a6c;
+  --border-color: #dfd5c3;
+  --accent-color: #7c5230;
+  --accent-hover: #5e3c20;
+  --accent-soft: rgba(124, 82, 48, 0.12);
+  --code-bg: #ebe4d6;
+  --blockquote-bg: #efe8da;
+  --hl-bg: rgba(245, 158, 11, 0.28);
+  --shadow-sm: 0 2px 8px rgba(43, 38, 32, 0.05);
+  --shadow-md: 0 8px 24px rgba(43, 38, 32, 0.09);
+
+  /* Reader Typography Variables */
+  --reader-font: 'RIDIBatang', 'MaruBuri', 'Noto Serif KR', Georgia, serif;
+  --reader-font-size: 18px;
+  --reader-line-height: 1.9;
+  --reader-para-spacing: 1.3em;
+  --reader-max-width: 820px;
+}
+
+/* 2. Forest Sage (칠판·안구 휴식 초록 세이지 학습 테마) */
+[data-theme="forest"] {
+  --bg-primary: #eaf1ec;
+  --bg-secondary: #dde8e0;
+  --bg-surface: #f3f8f4;
+  --bg-elevated: #f9fcfa;
+  --text-primary: #1e2d24;
+  --text-secondary: #3e5446;
+  --text-muted: #688071;
+  --border-color: #cbdcd0;
+  --accent-color: #2d6a4f;
+  --accent-hover: #1b4332;
+  --accent-soft: rgba(45, 106, 79, 0.12);
+  --code-bg: #dfe9e2;
+  --blockquote-bg: #e3ede6;
+  --hl-bg: rgba(52, 211, 153, 0.3);
+  --shadow-sm: 0 2px 8px rgba(30, 45, 36, 0.05);
+  --shadow-md: 0 8px 24px rgba(30, 45, 36, 0.09);
+}
+
+/* 3. Classic Sepia (전통 전자책 세피아) */
+[data-theme="sepia"] {
+  --bg-primary: #eee4d3;
+  --bg-secondary: #e4d8c3;
+  --bg-surface: #f6efe2;
+  --bg-elevated: #fbf7ef;
+  --text-primary: #2f251b;
+  --text-secondary: #5c4d3c;
+  --text-muted: #8a7966;
+  --border-color: #d6c7ae;
+  --accent-color: #8b5e34;
+  --accent-hover: #6f4824;
+  --accent-soft: rgba(139, 94, 52, 0.13);
+  --code-bg: #e5dac6;
+  --blockquote-bg: #e8decb;
+  --hl-bg: rgba(245, 158, 11, 0.3);
+  --shadow-sm: 0 2px 8px rgba(47, 37, 27, 0.06);
+  --shadow-md: 0 8px 24px rgba(47, 37, 27, 0.1);
+}
+
+/* 4. Soft Milk White (눈부심 없는 밀크 화이트) */
+[data-theme="soft_light"],
+[data-theme="light"] {
+  --bg-primary: #f6f5f2;
+  --bg-secondary: #eceae4;
+  --bg-surface: #fcfbf9;
+  --bg-elevated: #ffffff;
+  --text-primary: #22252a;
+  --text-secondary: #495057;
+  --text-muted: #747c84;
+  --border-color: #dfddd6;
+  --accent-color: #3b5bdb;
+  --accent-hover: #2b44a8;
+  --accent-soft: rgba(59, 91, 219, 0.1);
+  --code-bg: #eeece6;
+  --blockquote-bg: #f1efe9;
+  --hl-bg: rgba(250, 204, 21, 0.32);
+  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.07);
+}
+
+/* 5. Warm Comfort Dark (빛 번짐 없는 웜 차콜 야간 학습 테마) */
+[data-theme="dark"] {
+  --bg-primary: #18191c;
+  --bg-secondary: #202227;
+  --bg-surface: #24272d;
+  --bg-elevated: #2c3038;
+  --text-primary: #dcd8d0;
+  --text-secondary: #a6a29a;
+  --text-muted: #76736d;
+  --border-color: #343842;
+  --accent-color: #e09f67;
+  --accent-hover: #f0b785;
+  --accent-soft: rgba(224, 159, 103, 0.15);
+  --code-bg: #141518;
+  --blockquote-bg: #1e2025;
+  --hl-bg: rgba(245, 158, 11, 0.28);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* 6. Deep Forest Night (야간 딥그린 집중 테마) */
+[data-theme="deep_forest"] {
+  --bg-primary: #131b16;
+  --bg-secondary: #19241e;
+  --bg-surface: #1e2b24;
+  --bg-elevated: #25362d;
+  --text-primary: #d4e2da;
+  --text-secondary: #9ab3a5;
+  --text-muted: #698274;
+  --border-color: #2d4035;
+  --accent-color: #52b788;
+  --accent-hover: #74c69d;
+  --accent-soft: rgba(82, 183, 136, 0.15);
+  --code-bg: #0f1612;
+  --blockquote-bg: #17221c;
+  --hl-bg: rgba(82, 183, 136, 0.28);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* 7. E-Ink High Contrast */
+[data-theme="eink"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f2f2;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #1a1a1a;
+  --text-muted: #4a4a4a;
+  --border-color: #000000;
+  --accent-color: #000000;
+  --accent-hover: #222222;
+  --accent-soft: rgba(0, 0, 0, 0.09);
+  --code-bg: #efefef;
+  --blockquote-bg: #f6f6f6;
+  --hl-bg: rgba(0, 0, 0, 0.14);
+  --shadow-sm: none;
+  --shadow-md: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* Eye-Care Warm Blue-Light Filter Overlay */
+#eyecare-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: rgba(255, 166, 77, 0);
+  mix-blend-mode: multiply;
+  transition: background 0.25s ease;
+}
+
+[data-theme="dark"] #eyecare-overlay,
+[data-theme="deep_forest"] #eyecare-overlay {
+  mix-blend-mode: screen;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Top Reading Progress Bar */
+#top-progress-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: transparent;
+  z-index: 100;
+}
+#top-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-color), #10b981);
+  transition: width 0.15s ease-out;
+}
+
+/* Layout Shell */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.app-header {
+  height: 54px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+/* Open Study Tabs Bar (Multi-Tab Navigation like Obsidian) */
+.study-tabs-bar {
+  height: 38px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  z-index: 35;
+}
+
+.study-tabs-bar::-webkit-scrollbar {
+  height: 3px;
+}
+
+.study-tab-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 8px 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: var(--text-secondary);
+  background: transparent;
+  transition: all 0.15s ease;
+  max-width: 220px;
+}
+
+.study-tab-item:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.study-tab-item.active {
+  background: var(--bg-primary);
+  color: var(--accent-color);
+  border-color: var(--border-color);
+  font-weight: 700;
+}
+
+.study-tab-close {
+  opacity: 0.5;
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.study-tab-close:hover {
+  opacity: 1;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Left Sidebar (Hierarchical Tree Explorer) */
+.sidebar-left {
+  width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: margin-left 0.22s ease, transform 0.22s ease;
+  z-index: 30;
+}
+
+.sidebar-left.collapsed {
+  margin-left: -320px;
+}
+
+/* Right Sidebar (TOC, Study Scratchpad, Highlights) */
+.sidebar-right {
+  width: 320px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: margin-right 0.22s ease;
+  z-index: 25;
+}
+
+.sidebar-right.collapsed {
+  margin-right: -320px;
+}
+
+/* Center Workspace (Supports Split Comparison Mode) */
+.center-workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.reader-viewport {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  position: relative;
+  background: var(--bg-primary);
+}
+
+/* Secondary Split Reference Viewport */
+.split-reference-pane {
+  width: 46%;
+  border-left: 2px solid var(--border-color);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reader-container {
+  max-width: var(--reader-max-width);
+  margin: 0 auto;
+  padding: 32px 32px 120px 32px;
+}
+
+/* Hierarchical Tree Styling in Sidebar */
+.tree-folder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.tree-folder-row:hover {
+  background: var(--bg-surface);
+}
+
+.tree-folder-row.active-folder {
+  background: var(--accent-soft);
+  color: var(--accent-color);
+  font-weight: 700;
+}
+
+.tree-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5.5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  transition: all 0.12s;
+}
+
+.tree-doc-row:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.tree-doc-row.active-doc {
+  background: var(--accent-soft);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  font-weight: 700;
+}
+
+.tree-children-guide {
+  border-left: 1.5px solid var(--border-color);
+  margin-left: 13px;
+  padding-left: 7px;
+}
+
+/* E-Book Article Typography (Optimized for Long Study Sessions) */
+.ebook-content {
+  font-family: var(--reader-font);
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+  color: var(--text-primary);
+  letter-spacing: -0.012em;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.ebook-content h1,
+.ebook-content h2,
+.ebook-content h3,
+.ebook-content h4 {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text-primary);
+  font-weight: 700;
+  line-height: 1.4;
+  margin-top: 2.1em;
+  margin-bottom: 0.75em;
+  scroll-margin-top: 28px;
+  position: relative;
+}
+
+.ebook-content h1 {
+  font-size: 1.68em;
+  padding-bottom: 0.4em;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.ebook-content h2 {
+  font-size: 1.38em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ebook-content h3 {
+  font-size: 1.18em;
+}
+
+.ebook-content h4 {
+  font-size: 1.05em;
+}
+
+.ebook-content p {
+  margin-top: 0;
+  margin-bottom: var(--reader-para-spacing);
+}
+
+.ebook-content ul,
+.ebook-content ol {
+  margin-top: 0;
+  margin-bottom: var(--reader-para-spacing);
+  padding-left: 1.6em;
+}
+
+.ebook-content ul {
+  list-style-type: disc;
+}
+
+.ebook-content ul ul {
+  list-style-type: circle;
+  margin-bottom: 0.35em;
+}
+
+.ebook-content ul ul ul {
+  list-style-type: square;
+}
+
+.ebook-content ol {
+  list-style-type: decimal;
+}
+
+.ebook-content li {
+  margin-bottom: 0.45em;
+}
+
+.ebook-content hr {
+  margin: 2em 0;
+  border: 0;
+  border-top: 1.5px solid var(--border-color);
+}
+
+.ebook-content strong,
+.ebook-content b,
+.ebook-content .obs-bold {
+  font-weight: 800;
+  color: var(--accent-hover);
+  -webkit-text-stroke: 0.35px currentColor;
+  text-shadow: 0.15px 0 0 currentColor;
+  background: var(--accent-soft);
+  padding: 0.04em 0.24em;
+  border-radius: 4px;
+}
+
+.ebook-content h1 strong,
+.ebook-content h2 strong,
+.ebook-content h3 strong,
+.ebook-content h4 strong,
+.ebook-content h1 .obs-bold,
+.ebook-content h2 .obs-bold,
+.ebook-content h3 .obs-bold,
+.ebook-content h4 .obs-bold {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.ebook-content em,
+.ebook-content i {
+  font-style: italic;
+}
+
+.ebook-content del,
+.ebook-content .obs-del {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+/* Obsidian LaTeX / KaTeX Math Formulas */
+.ebook-content .obs-math-block {
+  margin: 1.25em 0;
+  padding: 0.85em 1.1em;
+  overflow-x: auto;
+  text-align: center;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+}
+
+.ebook-content .obs-math-inline {
+  display: inline-block;
+  vertical-align: baseline;
+  padding: 0 0.12em;
+  font-size: 1.02em;
+}
+
+.ebook-content .obs-math-sym {
+  font-family: 'Cambria Math', 'STIX Two Math', 'Noto Serif KR', serif;
+  font-weight: 600;
+  padding: 0 0.06em;
+}
+
+.ebook-content .katex {
+  font-size: 1.05em;
+}
+
+.ebook-content .katex-display {
+  margin: 0.35em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Obsidian ==Highlight== & User Saved Highlights */
+.ebook-content mark,
+.ebook-content .obs-hl {
+  background: var(--hl-bg);
+  color: inherit;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.user-hl-yellow { background: rgba(250, 204, 21, 0.38); border-bottom: 2px solid #eab308; padding: 1px 3px; border-radius: 3px; cursor: pointer; }
+.user-hl-green  { background: rgba(52, 211, 153, 0.32); border-bottom: 2px solid #10b981; padding: 1px 3px; border-radius: 3px; cursor: pointer; }
+.user-hl-blue   { background: rgba(96, 165, 250, 0.32); border-bottom: 2px solid #3b82f6; padding: 1px 3px; border-radius: 3px; cursor: pointer; }
+.user-hl-pink   { background: rgba(251, 113, 133, 0.32); border-bottom: 2px solid #f43f5e; padding: 1px 3px; border-radius: 3px; cursor: pointer; }
+
+/* 🧠 Active Recall Cloze Mode (빈칸 가리기 암기 학습) */
+.cloze-target {
+  transition: all 0.18s ease;
+}
+
+.cloze-mode-active .cloze-hidden {
+  background: var(--bg-secondary) !important;
+  color: transparent !important;
+  border: 1.5px dashed var(--accent-color) !important;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.cloze-mode-active .cloze-hidden * {
+  color: transparent !important;
+  opacity: 0 !important;
+}
+
+.cloze-mode-active .cloze-hidden::after {
+  content: "❓";
+  color: var(--accent-color);
+  font-size: 0.78em;
+  font-weight: 700;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.cloze-mode-active .cloze-revealed {
+  background: rgba(16, 185, 129, 0.18) !important;
+  border-bottom: 2px solid #10b981 !important;
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+
+.ebook-content a {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+
+.ebook-content a:hover {
+  color: var(--accent-hover);
+}
+
+.ebook-content blockquote {
+  margin: 1.4em 0;
+  padding: 14px 18px;
+  border-left: 4px solid var(--accent-color);
+  background: var(--blockquote-bg);
+  border-radius: 0 10px 10px 0;
+  color: var(--text-secondary);
+}
+
+.ebook-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Obsidian Callout Boxes */
+.obsidian-callout {
+  margin: 1.5em 0;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border-left: 5px solid var(--accent-color);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.obsidian-callout-title {
+  font-family: 'Pretendard', sans-serif;
+  font-weight: 700;
+  font-size: 0.96em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.callout-note, .callout-info { border-left-color: #3b82f6; }
+.callout-tip, .callout-success { border-left-color: #10b981; }
+.callout-important { border-left-color: #8b5cf6; }
+.callout-warning, .callout-caution, .callout-danger { border-left-color: #f59e0b; }
+
+/* Code & Prompt Blocks */
+.code-wrapper {
+  position: relative;
+  margin: 1.4em 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--code-bg);
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid var(--border-color);
+  font-family: 'Pretendard', sans-serif;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.copy-code-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.copy-code-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.ebook-content pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.87em;
+  line-height: 1.65;
+}
+
+.ebook-content :not(pre) > code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.86em;
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+}
+
+/* Responsive Tables */
+.table-scroll-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 1.5em 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.ebook-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  font-family: 'Pretendard', sans-serif;
+}
+
+.ebook-content th,
+.ebook-content td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.ebook-content th {
+  background: var(--bg-secondary);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ebook-content tr:last-child td {
+  border-bottom: none;
+}
+
+.ebook-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  display: block;
+  margin: 1.5em auto;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Heading Action Buttons (Bookmark Pin & Section Collapse) */
+.heading-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ebook-content h1:hover .heading-action-group,
+.ebook-content h2:hover .heading-action-group,
+.ebook-content h3:hover .heading-action-group,
+.ebook-content h4:hover .heading-action-group {
+  opacity: 1;
+}
+
+.heading-pin-btn {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.heading-pin-btn:hover {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .heading-action-group {
+    opacity: 0.8;
+  }
+}
+
+/* Text Selection Floating Highlight Toolbar */
+#selection-toolbar {
+  position: fixed;
+  z-index: 60;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-color);
+  box-shadow: var(--shadow-md);
+  border-radius: 12px;
+  padding: 5px 8px;
+  display: none;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Floating XP Gain Toast */
+.xp-toast-float {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 80;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: var(--accent-color);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: var(--shadow-md);
+  animation: xpFloatUp 1.8s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes xpFloatUp {
+  0% { opacity: 0; transform: translateY(12px) scale(0.95); }
+  20% { opacity: 1; transform: translateY(0) scale(1); }
+  80% { opacity: 1; transform: translateY(-6px) scale(1); }
+  100% { opacity: 0; transform: translateY(-16px) scale(0.95); }
+}
+
+/* Mobile Backdrop for Drawers */
+.mobile-backdrop {
+  display: none;
+  position: fixed;
+  top: 54px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+.mobile-backdrop.active {
+  display: block;
+}
+
+/* Active TTS Paragraph Highlight */
+.tts-speaking {
+  background: var(--accent-soft);
+  border-radius: 6px;
+  outline: 2px solid var(--accent-color);
+  transition: background 0.2s;
+}
+
+/* Paginated Chapter Mode */
+.chapter-page-hidden {
+  display: none !important;
+}
+
+/* Section Collapsed Mode */
+.section-folded-hidden {
+  display: none !important;
+}
+
+/* Tablet & iPad Responsive Drawer */
+@media (max-width: 1024px) {
+  .sidebar-right {
+    position: fixed;
+    top: 54px;
+    right: 0;
+    bottom: 0;
+    width: 310px;
+    max-width: 88vw;
+    box-shadow: var(--shadow-md);
+  }
+  .sidebar-right.collapsed {
+    margin-right: -100vw;
+  }
+  .split-reference-pane {
+    position: fixed;
+    inset: 54px 0 0 0;
+    width: 100%;
+    z-index: 32;
+  }
+}
+
+/* Smartphone Responsive Drawer & Typography Padding */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 8px;
+  }
+  .sidebar-left {
+    position: fixed;
+    top: 54px;
+    left: 0;
+    bottom: 0;
+    width: 86vw;
+    max-width: 320px;
+    box-shadow: var(--shadow-md);
+  }
+  .sidebar-left.collapsed {
+    margin-left: -100vw;
+  }
+  .reader-container {
+    padding: 20px 16px calc(96px + env(safe-area-inset-bottom, 0px)) 16px;
+  }
+  .ebook-content h1 {
+    font-size: 1.45em;
+  }
+  .ebook-content h2 {
+    font-size: 1.25em;
+  }
+}

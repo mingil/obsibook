@@ -1,0 +1,87 @@
+name: Publish Docker Image & Run Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USER: kimmingil
+      DOCKERHUB_PASS: ${{ secrets.KIMMINGIL || secrets.DOCKERHUB_TOKEN || secrets.DOCKER_TOKEN || secrets.DOCKERHUB_PASSWORD || vars.KIMMINGIL || vars.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies & Run unit tests
+        run: |
+          pip install -r requirements.txt
+          python -m pytest tests/test_obsibook.py -v
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: ${{ env.DOCKERHUB_PASS != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: kimmingil
+          password: ${{ env.DOCKERHUB_PASS }}
+
+      - name: Extract Docker metadata (GHCR + Docker Hub)
+        if: ${{ env.DOCKERHUB_PASS != '' }}
+        id: meta_both
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            docker.io/kimmingil/obsibook
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      - name: Extract Docker metadata (GHCR Only fallback)
+        if: ${{ env.DOCKERHUB_PASS == '' }}
+        id: meta_ghcr
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta_both.outputs.tags || steps.meta_ghcr.outputs.tags }}
+          labels: ${{ steps.meta_both.outputs.labels || steps.meta_ghcr.outputs.labels }}
+
+      - name: Sync README.md to Docker Hub Description
+        if: ${{ env.DOCKERHUB_PASS != '' }}
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: kimmingil
+          password: ${{ env.DOCKERHUB_PASS }}
+          repository: kimmingil/obsibook
+          readme-filepath: ./README.md

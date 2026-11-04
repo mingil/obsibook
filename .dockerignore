@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.git/
+.github/
+.env
+bin/
+data/
+*.log
+auto_push_github.py
+@eaDir/
+#recycle/
+.DS_Store
