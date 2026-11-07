@@ -9,6 +9,11 @@ permissions:
   contents: read
   packages: write
 
+# 2026-11-07: 빌드가 겹치면 늦게 끝난 예전 commit 빌드가 latest 를 덮어쓰는 것을 방지 (같은 브랜치는 순서대로 1개씩)
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest
