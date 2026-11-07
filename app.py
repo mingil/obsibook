@@ -46,7 +46,8 @@ _watcher_stop_event = threading.Event()
 
 
 def _background_vault_watcher():
-    while not _watcher_stop_event.wait(30.0):
+    # 볼트 변경 감시 주기: 30초 → 120초 (변경 없는 동안의 불필요한 재스캔 부하 감소)
+    while not _watcher_stop_event.wait(120.0):
         try:
             get_scanner().sync_index(force=True)
         except Exception:

@@ -341,6 +341,7 @@ class _VaultMemoryIndex:
         self.vault_path = vault_path
         self.lock = threading.RLock()
         self.loaded_from_db: bool = False
+        self.assets_prewarmed: bool = False
         self.last_scan_mono: float = 0.0
         self.last_scan_ms: float = 0.0
 
@@ -940,8 +941,11 @@ class VaultScanner:
                     pass
 
             # 6. Pre-compress & pre-warm raster images into RAM/WebP cache in background
-            if asset_by_rel:
+            #    처음 한 번 + 볼트 구조가 바뀌었을 때만 실행. (예전에는 매 스캔마다 실행되어,
+            #    RAM 캐시(400개)보다 이미지가 많으면 30초마다 디스크 캐시 전체를 다시 읽었음)
+            if asset_by_rel and (structure_changed or not idx.assets_prewarmed):
                 _prewarm_assets_async(list(set(asset_by_rel.values())))
+                idx.assets_prewarmed = True
 
             idx.last_scan_mono = time.monotonic()
             idx.last_scan_ms = round((time.perf_counter() - t0) * 1000, 2)
