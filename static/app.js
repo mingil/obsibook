@@ -747,16 +747,24 @@ function enhanceArticleImages(container) {
       const cleanAlt = pipeMatch[1].trim();
       const widthPx = Number(pipeMatch[2]);
       if (widthPx > 0) {
-        img.style.maxWidth = `min(100%, ${widthPx}px)`;
+        img.dataset.sized = String(widthPx);
       }
       img.setAttribute('alt', cleanAlt);
     } else if (bareSizeMatch) {
       const widthPx = Number(bareSizeMatch[1]);
       if (widthPx > 0) {
-        img.style.maxWidth = `min(100%, ${widthPx}px)`;
+        img.dataset.sized = String(widthPx);
       }
       img.setAttribute('alt', '');
     }
+
+    // 본문 배율(--reader-zoom)에 맞춰 사진도 같이 확대/축소: (지정 크기 또는 원래 크기) × 배율, 본문 폭은 넘지 않음
+    const fitToZoom = () => {
+      const base = Number(img.dataset.sized) || img.naturalWidth;
+      if (base > 0) img.style.width = `min(100%, calc(${base}px * var(--reader-zoom, 1)))`;
+    };
+    if (img.dataset.sized || (img.complete && img.naturalWidth)) fitToZoom();
+    img.addEventListener('load', fitToZoom);
   });
 }
 
