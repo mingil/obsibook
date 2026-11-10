@@ -4482,22 +4482,29 @@ function toggleZenMode(force) {
   const on = typeof force === 'boolean' ? force : !document.body.classList.contains('zen-mode');
   if (on && !state.currentDoc) return; // 문서를 볼 때만
   document.body.classList.toggle('zen-mode', on);
+  document.getElementById('btn-zen-header')?.setAttribute('aria-pressed', String(on));
   document.getElementById('settings-popover')?.classList.add('hidden');
   const el = document.documentElement;
   const isFs = () => document.fullscreenElement || document.webkitFullscreenElement;
+  // 터치 기기(아이패드·휴대폰)는 브라우저 전체화면을 쓰지 않음: 사파리는 위로 스크롤하면 전체화면을 나가 버려 집중 모드가 풀렸음
+  const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   try {
-    if (on && !isFs()) {
+    if (on && !isFs() && !touch) {
       const req = el.requestFullscreen || el.webkitRequestFullscreen;
-      const r = req && req.call(el); if (r && r.catch) r.catch(() => {});
-    } else if (!on && isFs()) {
+      const r = req && req.call(el);
+      window._zenOwnsFullscreen = true;
+      if (r && r.catch) r.catch(() => { window._zenOwnsFullscreen = false; });
+    } else if (!on && isFs() && window._zenOwnsFullscreen) {
       const ex = document.exitFullscreen || document.webkitExitFullscreen;
       const r = ex && ex.call(document); if (r && r.catch) r.catch(() => {});
     }
+    if (!on) window._zenOwnsFullscreen = false;
   } catch (e) { /* 전체화면 미지원(예: 아이폰) → 화면 정리만 */ }
   if (state.currentDoc && typeof setupChapterPagination === 'function') setupChapterPagination();
 }
 ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) => document.addEventListener(ev, () => {
-  if (!(document.fullscreenElement || document.webkitFullscreenElement) && document.body.classList.contains('zen-mode')) toggleZenMode(false);
+  // 집중 모드가 직접 켠 전체화면을 (PC에서 Esc 등으로) 나간 경우에만 집중 모드도 끝냄
+  if (!(document.fullscreenElement || document.webkitFullscreenElement) && window._zenOwnsFullscreen && document.body.classList.contains('zen-mode')) toggleZenMode(false);
 }));
 
 function setupKeyboardShortcuts() {

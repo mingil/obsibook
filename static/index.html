@@ -24,7 +24,7 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
-  <link rel="stylesheet" href="/static/styles.css?v=3.6.0" />
+  <link rel="stylesheet" href="/static/styles.css?v=3.6.1" />
 </head>
 <body>
   <!-- Eye-Care Warm Blue-Light Filter Overlay -->
@@ -463,6 +463,17 @@
         </button>
 
         <!-- Typography & Eye-Comfort Theme Settings Button -->
+        <button
+            type="button"
+            id="btn-zen-header"
+            onclick="toggleZenMode(true)"
+            class="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition mr-1"
+            style="border-color: var(--border-color); background: var(--bg-secondary);"
+            title="집중 모드: 제목·본문만 남기기 (F, 끝내기 Esc)"
+            aria-label="집중 모드"
+          >
+            ⛶ <span class="hidden md:inline">집중</span>
+          </button>
         <div class="relative">
           <button
             type="button"
@@ -1059,6 +1070,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3.6.0"></script>
+  <script src="/static/app.js?v=3.6.1"></script>
 </body>
 </html>
