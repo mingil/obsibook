@@ -4144,6 +4144,45 @@ function stepSetting(key, delta) {
   }
 }
 
+/* =========================================================
+   본문 배율 (기기 종류별로 따로 기억)
+   - 서버에 저장되는 글자 크기(fontSize)는 그대로 두고, 그 위에 이 기기에서만 쓰는 배율을 곱한다
+   - 기기 종류는 창 크기가 아니라 화면 크기·터치 여부로 판단 → 창을 줄였다 늘려도 바뀌지 않음
+   ========================================================= */
+const READER_ZOOM_STEPS = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.75, 2, 2.25, 2.5];
+function readerDeviceClass() {
+  const sw = Math.max(window.screen?.width || 0, window.screen?.height || 0);
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  if (coarse) return Math.min(window.screen?.width || 0, window.screen?.height || 0) < 600 ? "phone" : "tablet";
+  return sw >= 2200 ? "large" : "desktop";
+}
+function readerZoomKey() { return "obsibook_reader_zoom_" + readerDeviceClass(); }
+function loadReaderZoom() {
+  try {
+    const v = Number(localStorage.getItem(readerZoomKey()));
+    return READER_ZOOM_STEPS.includes(v) ? v : 1;
+  } catch (e) { return 1; }
+}
+function applyReaderZoom(z, save = true) {
+  state.readerZoom = z;
+  document.documentElement.style.setProperty("--reader-zoom", String(z));
+  const lbl = document.getElementById("reader-zoom-label");
+  if (lbl) lbl.textContent = Math.round(z * 100) + "%";
+  const i = READER_ZOOM_STEPS.indexOf(z);
+  const out = document.getElementById("btn-reader-zoom-out"), inn = document.getElementById("btn-reader-zoom-in");
+  if (out) out.disabled = i <= 0;
+  if (inn) inn.disabled = i >= READER_ZOOM_STEPS.length - 1;
+  if (save) { try { localStorage.setItem(readerZoomKey(), String(z)); } catch (e) {} }
+  if (save && state.currentDoc && typeof setupChapterPagination === "function") setupChapterPagination();
+}
+function stepReaderZoom(dir) {
+  const cur = state.readerZoom || 1;
+  let i = READER_ZOOM_STEPS.indexOf(cur); if (i < 0) i = READER_ZOOM_STEPS.indexOf(1);
+  const n = READER_ZOOM_STEPS[Math.max(0, Math.min(READER_ZOOM_STEPS.length - 1, i + dir))];
+  if (n !== cur) applyReaderZoom(n);
+}
+function resetReaderZoom() { applyReaderZoom(1); }
+
 function applySettingsToDOM() {
   const s = state.settings;
   document.documentElement.setAttribute('data-theme', s.theme || 'warm_paper');
@@ -4160,6 +4199,7 @@ function applySettingsToDOM() {
   document.documentElement.style.setProperty('--reader-font-size', `${s.fontSize || 18}px`);
   document.documentElement.style.setProperty('--reader-line-height', String(s.lineHeight || 1.9));
   document.documentElement.style.setProperty('--reader-max-width', s.maxWidth || '820px');
+  applyReaderZoom(state.readerZoom || loadReaderZoom(), false);
 
   const eyeVal = Number(s.eyeCareFilter || 0);
   const overlay = document.getElementById('eyecare-overlay');
@@ -4294,6 +4334,14 @@ function setupKeyboardShortcuts() {
     }
 
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    // 본문 배율: Alt + = / Alt + - / Alt + 0 (브라우저 확대 Ctrl 과 겹치지 않음)
+    // e.code(키 위치)로 판단: Mac 은 Option+= 가 "≠" 등으로 입력되기 때문
+    if (e.altKey && !e.ctrlKey && !e.metaKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(e.code)) {
+      e.preventDefault();
+      if (e.code.endsWith('0')) resetReaderZoom(); else stepReaderZoom(/Minus|Subtract/.test(e.code) ? -1 : 1);
+      return;
+    }
 
     if (e.altKey && e.key === 'ArrowLeft') {
       e.preventDefault();

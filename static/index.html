@@ -1004,6 +1004,12 @@
 
             <!-- Rendered Obsidian Markdown Article -->
             <article id="ebook-article" class="ebook-content"></article>
+            <!-- 본문 배율 조절기 (기기별 저장, 제목·본문만 확대/축소) -->
+            <div id="reader-zoom-control" class="reader-zoom-control" role="group" aria-label="본문 크기 조절">
+              <button type="button" onclick="stepReaderZoom(-1)" id="btn-reader-zoom-out" title="본문 작게 (Alt + -)" aria-label="본문 작게">가−</button>
+              <button type="button" onclick="resetReaderZoom()" id="reader-zoom-label" title="원래 크기로 (Alt + 0)" aria-label="본문 배율, 누르면 100%">100%</button>
+              <button type="button" onclick="stepReaderZoom(1)" id="btn-reader-zoom-in" title="본문 크게 (Alt + =)" aria-label="본문 크게">가+</button>
+            </div>
 
             <!-- Bottom E-Book Chapter Navigation (Prev / Next Document & Back to Folder) -->
             <div class="mt-14 pt-8 border-t space-y-4" style="border-color: var(--border-color);">

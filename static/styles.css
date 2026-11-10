@@ -972,3 +972,59 @@ html, body {
     font-size: 1.25em;
   }
 }
+
+/* =========================================================
+   본문 배율 (기기별): 사이드바·상단 메뉴는 그대로, 제목·본문만 확대/축소
+   --reader-zoom 은 app.js 가 기기 종류별(휴대폰/태블릿/PC/큰 모니터)로 저장·적용
+   ========================================================= */
+:root { --reader-zoom: 1; }
+.reader-container {
+  /* 본문을 키우면 폭도 같은 비율로 넓혀 한 줄 길이를 유지, 화면보다 넓어지지는 않음 */
+  max-width: min(100%, calc(var(--reader-max-width) * var(--reader-zoom)));
+}
+.ebook-content { font-size: calc(var(--reader-font-size) * var(--reader-zoom)); }
+#doc-main-title { font-size: calc(1.5rem * var(--reader-zoom)); line-height: 1.35; }
+#doc-subtitle-text { font-size: calc(0.8rem * var(--reader-zoom)); }
+@media (min-width: 640px) {
+  #doc-main-title { font-size: calc(1.875rem * var(--reader-zoom)); }
+  #doc-subtitle-text { font-size: calc(0.875rem * var(--reader-zoom)); }
+}
+.reader-zoom-control {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9999px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  opacity: 0.88;
+  transition: opacity 0.15s ease;
+}
+.reader-zoom-control:hover, .reader-zoom-control:focus-within { opacity: 1; }
+.reader-zoom-control button {
+  min-width: 40px;               /* 손가락으로 누르기 쉬운 크기 */
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: transparent;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader-zoom-control button:hover { background: var(--bg-secondary); }
+.reader-zoom-control #reader-zoom-label { min-width: 52px; font-size: 12px; color: var(--accent-color); }
+.reader-zoom-control button:disabled { opacity: 0.35; }
+#document-view.hidden .reader-zoom-control { display: none; }
+@media print { .reader-zoom-control { display: none; } }
+@media (max-width: 640px) {
+  /* 휴대폰: 본문을 덜 가리도록 작고 더 투명하게 */
+  .reader-zoom-control { opacity: 0.72; padding: 2px; }
+  .reader-zoom-control button { min-width: 36px; height: 32px; font-size: 12px; padding: 0 6px; }
+  .reader-zoom-control #reader-zoom-label { min-width: 44px; font-size: 11px; }
+}
