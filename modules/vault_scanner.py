@@ -32,6 +32,7 @@ ASSET_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 _ASSET_RAM_CACHE: Dict[str, Tuple[bytes, str, str]] = {}
 _ASSET_RAM_LOCK = threading.Lock()
+_WARM_SKIP: set = set()  # WebP로 줄지 않는 사진(예열 때 다시 변환하지 않음, 키 24자라 수천 개여도 작음)
 _MAX_RAM_CACHE_ITEMS = 400
 _RASTER_OPTIMIZE_EXTS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
@@ -41,7 +42,7 @@ def _norm_key(text: str) -> str:
 
 
 def get_optimized_asset_payload(
-    asset_path: Path, raw: bool = False
+    asset_path: Path, raw: bool = False, warm_only: bool = False
 ) -> Tuple[Optional[bytes], str, str]:
     """
     Returns (bytes_or_none, media_type, etag) for a vault asset.
@@ -49,6 +50,9 @@ def get_optimized_asset_payload(
     - Compresses large PNG/JPG/BMP images (>48KB) into crisp, lightweight WebP
       cached in both RAM (_ASSET_RAM_CACHE) and disk (DATA_DIR/asset_cache).
     - Caches small images (<=48KB) directly in RAM so serving takes 0ms (zero HDD I/O).
+    - warm_only=True (예열용): 디스크 WebP 캐시만 만들어 두고 RAM 캐시는 건드리지 않음.
+      이미 캐시가 있으면 파일을 읽지도 않음 (볼트 변경마다 사진 수천 장을 다시 읽어
+      메모리 단편화·디스크 읽기를 키우던 문제 방지).
     """
     ext = asset_path.suffix.lower()
     guessed_mime, _ = mimetypes.guess_type(str(asset_path))
@@ -69,6 +73,10 @@ def get_optimized_asset_payload(
     cache_key = hashlib.sha1(key_seed.encode("utf-8")).hexdigest()[:24]
     etag = f'W/"opt-{cache_key}"'
 
+    disk_cache_file = ASSET_CACHE_DIR / f"{cache_key}.webp"
+    if warm_only and (size_bytes <= 49152 or not _HAS_PILLOW or cache_key in _WARM_SKIP or disk_cache_file.is_file()):
+        return None, orig_mime, etag
+
     # 1. Instant 0ms L1 RAM Cache Hit
     with _ASSET_RAM_LOCK:
         ram_hit = _ASSET_RAM_CACHE.get(cache_key)
@@ -76,7 +84,6 @@ def get_optimized_asset_payload(
             return ram_hit
 
     # 2. L2 Persistent Disk Cache Hit (DATA_DIR/asset_cache)
-    disk_cache_file = ASSET_CACHE_DIR / f"{cache_key}.webp"
     if disk_cache_file.is_file():
         try:
             webp_bytes = disk_cache_file.read_bytes()
@@ -126,6 +133,8 @@ def get_optimized_asset_payload(
                 except Exception:
                     pass
                 payload = (webp_bytes, "image/webp", etag)
+                if warm_only:
+                    return payload
                 with _ASSET_RAM_LOCK:
                     if len(_ASSET_RAM_CACHE) >= _MAX_RAM_CACHE_ITEMS:
                         _ASSET_RAM_CACHE.pop(next(iter(_ASSET_RAM_CACHE)), None)
@@ -133,6 +142,10 @@ def get_optimized_asset_payload(
                 return payload
     except Exception:
         pass
+
+    if warm_only:
+        _WARM_SKIP.add(cache_key)
+        return None, orig_mime, etag
 
     # Fallback: cache original bytes in RAM if image is tiny/unusual or WebP wasn't smaller
     payload = (raw_bytes, orig_mime, etag)
@@ -147,6 +160,18 @@ _PREWARM_IN_PROGRESS = False
 _PREWARM_LOCK = threading.Lock()
 
 
+def _release_free_memory() -> None:
+    """사진 변환 뒤 남은 빈 메모리를 운영체제에 돌려줌 (glibc malloc_trim, 없으면 무시)."""
+    try:
+        import ctypes
+        import gc
+
+        gc.collect()
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _prewarm_assets_async(asset_paths: List[Path]) -> None:
     global _PREWARM_IN_PROGRESS
     with _PREWARM_LOCK:
@@ -159,10 +184,11 @@ def _prewarm_assets_async(asset_paths: List[Path]) -> None:
         try:
             for p in asset_paths:
                 if p.suffix.lower() in _RASTER_OPTIMIZE_EXTS:
-                    get_optimized_asset_payload(p, raw=False)
+                    get_optimized_asset_payload(p, raw=False, warm_only=True)
         except Exception:
             pass
         finally:
+            _release_free_memory()
             with _PREWARM_LOCK:
                 _PREWARM_IN_PROGRESS = False
 
