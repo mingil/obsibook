@@ -12,7 +12,7 @@
   <!-- Fonts: Pretendard, Gowun Batang, Noto Serif KR, JetBrains Mono (RIDIBatang & MaruBuri loaded in styles.css) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&family=Nanum+Myeongjo:wght@400;700&family=Nanum+Gothic:wght@400;700&family=Noto+Sans+KR:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;600&family=Hahmlet:wght@400;600&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+KR:wght@400;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
 
   <!-- Tailwind CSS, Markdown, KaTeX Math & Syntax Libraries -->
@@ -24,7 +24,7 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
-  <link rel="stylesheet" href="/static/styles.css?v=3.3.0" />
+  <link rel="stylesheet" href="/static/styles.css?v=3.5.0" />
 </head>
 <body>
   <!-- Eye-Care Warm Blue-Light Filter Overlay -->
@@ -467,98 +467,27 @@
             onclick="toggleSettingsPopover()"
             class="px-2.5 py-1.5 rounded-lg border text-xs font-bold transition"
             style="border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color);"
-            title="눈이 편안한 배경 색상, 글꼴, 줄간격, 블루라이트 보호 필터 설정"
+            title="보기 설정: 본문 배율·배경 테마·글꼴·글자 크기·줄 간격·본문 폭·블루라이트 필터"
           >
-            Aa <span class="hidden sm:inline">눈편한 설정</span>
+            Aa <span class="hidden sm:inline">보기 설정</span>
           </button>
 
           <!-- Typography & Theme Popover -->
           <div
             id="settings-popover"
-            class="hidden fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-[calc(100vw-16px)] max-w-sm rounded-2xl p-4 shadow-2xl border z-50 space-y-4 max-h-[82vh] overflow-y-auto"
+            class="hidden fixed sm:absolute right-2 sm:right-0 top-14 sm:top-auto sm:mt-2 w-[calc(100vw-16px)] max-w-md rounded-2xl p-4 shadow-2xl border z-50 space-y-4 max-h-[82vh] overflow-y-auto"
             style="background: var(--bg-surface); border-color: var(--border-color);"
           >
             <div class="flex items-center justify-between border-b pb-2" style="border-color: var(--border-color);">
-              <span class="text-xs font-bold">🎨 눈이 편안한 독서·학습 환경 설정</span>
-              <button type="button" onclick="toggleSettingsPopover()" class="text-xs opacity-60 hover:opacity-100">✕</button>
+              <span class="text-sm font-bold">👁 보기 설정 <span class="vs-sub">화면·글꼴·배경</span></span>
+              <button type="button" onclick="toggleSettingsPopover()" class="text-sm opacity-60 hover:opacity-100 px-1" aria-label="닫기">✕</button>
             </div>
-
-            <!-- 1. Eye-Comfort Theme Selector -->
-            <div>
-              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">눈 피로 방지 배경 테마</label>
-              <div class="grid grid-cols-3 gap-1.5">
-                <button type="button" onclick="applySetting('theme', 'warm_paper')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#f4efe6; color:#2b2620; border-color:#d5c7b2;">🌾 웜 페이퍼</button>
-                <button type="button" onclick="applySetting('theme', 'forest')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#eaf1ec; color:#1e2d24; border-color:#bcd2c3;">🌿 칠판 그린</button>
-                <button type="button" onclick="applySetting('theme', 'sepia')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#eee4d3; color:#2f251b; border-color:#cbb99c;">📜 세피아</button>
-                <button type="button" onclick="applySetting('theme', 'soft_light')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#f6f5f2; color:#22252a; border-color:#dcdad2;">☁️ 소프트밀크</button>
-                <button type="button" onclick="applySetting('theme', 'dark')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#18191c; color:#dcd8d0; border-color:#343842;">🌙 웜 다크</button>
-                <button type="button" onclick="applySetting('theme', 'deep_forest')" class="theme-btn py-2 px-2 rounded-xl text-xs font-bold border text-center" style="background:#131b16; color:#d4e2da; border-color:#2d4035;">🌲 포레스트밤</button>
-              </div>
-            </div>
-
-            <!-- 2. Korean E-Book Font Family -->
-            <div>
-              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">본문 독서 글꼴 (전자책 전용 폰트)</label>
-              <div class="grid grid-cols-2 gap-1.5">
-                <button type="button" onclick="applySetting('fontFamily', 'ridi')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'RIDIBatang', serif;">📖 리디바탕 (이북 추천)</button>
-                <button type="button" onclick="applySetting('fontFamily', 'maru')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'MaruBuri', serif;">✒️ 마루부리 (따뜻한 명조)</button>
-                <button type="button" onclick="applySetting('fontFamily', 'gowun')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'Gowun Batang', serif;">🌾 고운바탕 (부드러운 획)</button>
-                <button type="button" onclick="applySetting('fontFamily', 'sans')" class="px-2.5 py-2 rounded-xl text-xs border text-left font-semibold" style="border-color: var(--border-color); font-family: 'Pretendard', sans-serif;">📝 프리텐다드 (깔끔 고딕)</button>
-              </div>
-            </div>
-
-            <!-- 3. Font Size & Line Height -->
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-[11px] font-semibold mb-1 opacity-80">글자 크기 (<span id="lbl-font-size">18px</span>)</label>
-                <div class="flex items-center gap-1">
-                  <button type="button" onclick="stepSetting('fontSize', -1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">A-</button>
-                  <button type="button" onclick="stepSetting('fontSize', 1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">A+</button>
-                </div>
-              </div>
-              <div>
-                <label class="block text-[11px] font-semibold mb-1 opacity-80">줄간격 (<span id="lbl-line-height">1.9</span>)</label>
-                <div class="flex items-center gap-1">
-                  <button type="button" onclick="stepSetting('lineHeight', -0.1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">좁게</button>
-                  <button type="button" onclick="stepSetting('lineHeight', 0.1)" class="flex-1 py-1.5 rounded-lg border text-xs font-bold" style="border-color: var(--border-color);">넓게</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4. Reading Width -->
-            <div>
-              <label class="block text-[11px] font-semibold mb-1.5 opacity-80">페이지 본문 폭</label>
-              <div class="grid grid-cols-4 gap-1">
-                <button type="button" onclick="applySetting('maxWidth', '680px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">좁게</button>
-                <button type="button" onclick="applySetting('maxWidth', '820px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">표준</button>
-                <button type="button" onclick="applySetting('maxWidth', '1040px')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">넓게</button>
-                <button type="button" onclick="applySetting('maxWidth', '100%')" class="py-1.5 rounded-lg text-[11px] border font-semibold" style="border-color: var(--border-color);">전체</button>
-              </div>
-            </div>
-
-            <!-- 5. Eye-Care Warm Filter Slider -->
-            <div>
-              <div class="flex items-center justify-between text-[11px] font-semibold mb-1 opacity-80">
-                <span>🌙 안구 보호 블루라이트 차단 필터</span>
-                <span id="lbl-eyecare-val">0%</span>
-              </div>
-              <input
-                type="range"
-                id="rng-eyecare"
-                min="0"
-                max="35"
-                step="5"
-                value="0"
-                oninput="applySetting('eyeCareFilter', Number(this.value))"
-                class="w-full accent-amber-600 cursor-pointer"
-              />
-            </div>
-
-            <!-- Auto Scroll Restore Toggle -->
-            <label class="flex items-center justify-between text-xs pt-1 cursor-pointer">
-              <span>문서 열 때 이전 읽던 위치로 자동 이동</span>
-              <input type="checkbox" id="chk-auto-restore" checked onchange="applySetting('autoRestoreScroll', this.checked)" class="rounded" />
-            </label>
+            <!-- 내용은 app.js renderViewSettings() 가 채움 (현재 선택 표시·기본값 되돌리기 포함) -->
+            <div id="view-settings-body" class="space-y-3"></div>
+            <!-- 예전 코드 호환용 숨김 요소 -->
+            <span id="lbl-font-size" class="hidden"></span><span id="lbl-line-height" class="hidden"></span>
+            <span id="lbl-eyecare-val" class="hidden"></span><input type="range" id="rng-eyecare" class="hidden" />
+            <input type="checkbox" id="chk-auto-restore" class="hidden" />
           </div>
         </div>
 
@@ -1119,6 +1048,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3.3.0"></script>
+  <script src="/static/app.js?v=3.5.0"></script>
 </body>
 </html>

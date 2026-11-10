@@ -1028,3 +1028,55 @@ html, body {
   .reader-zoom-control button { min-width: 36px; height: 32px; font-size: 12px; padding: 0 6px; }
   .reader-zoom-control #reader-zoom-label { min-width: 44px; font-size: 11px; }
 }
+
+/* ===== 추가 배경 테마 (2026-11) ===== */
+[data-theme="paper_white"] {
+  --bg-primary: #ffffff; --bg-secondary: #f3f4f6; --bg-surface: #ffffff; --bg-elevated: #ffffff;
+  --text-primary: #1f2328; --text-secondary: #4b5563; --text-muted: #6b7280; --border-color: #e5e7eb;
+  --accent-color: #2563eb; --accent-hover: #1d4ed8; --accent-soft: rgba(37, 99, 235, 0.1);
+  --code-bg: #f3f4f6; --blockquote-bg: #f8fafc; --hl-bg: rgba(250, 204, 21, 0.35);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05); --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+[data-theme="blossom"] {
+  --bg-primary: #f8efef; --bg-secondary: #f0e2e2; --bg-surface: #fcf6f5; --bg-elevated: #fffafa;
+  --text-primary: #2e2426; --text-secondary: #5c4a4d; --text-muted: #8a7376; --border-color: #e8d4d4;
+  --accent-color: #a64b5f; --accent-hover: #8a3a4d; --accent-soft: rgba(166, 75, 95, 0.12);
+  --code-bg: #f1e4e4; --blockquote-bg: #f4e8e8; --hl-bg: rgba(244, 114, 182, 0.25);
+  --shadow-sm: 0 2px 8px rgba(46, 36, 38, 0.05); --shadow-md: 0 8px 24px rgba(46, 36, 38, 0.09);
+}
+[data-theme="slate_night"] {
+  --bg-primary: #1b2230; --bg-secondary: #242d3d; --bg-surface: #20283a; --bg-elevated: #273145;
+  --text-primary: #d8dee9; --text-secondary: #b4bccb; --text-muted: #8b94a6; --border-color: #364156;
+  --accent-color: #88c0d0; --accent-hover: #a3d2df; --accent-soft: rgba(136, 192, 208, 0.15);
+  --code-bg: #161c28; --blockquote-bg: #222a3a; --hl-bg: rgba(136, 192, 208, 0.25);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35); --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+[data-theme="oled_black"] {
+  --bg-primary: #000000; --bg-secondary: #0d0d0d; --bg-surface: #050505; --bg-elevated: #111111;
+  --text-primary: #d6d6d6; --text-secondary: #a8a8a8; --text-muted: #7a7a7a; --border-color: #262626;
+  --accent-color: #f59e0b; --accent-hover: #fbbf24; --accent-soft: rgba(245, 158, 11, 0.14);
+  --code-bg: #0a0a0a; --blockquote-bg: #0f0f0f; --hl-bg: rgba(245, 158, 11, 0.25);
+  --shadow-sm: none; --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.7);
+}
+[data-theme="slate_night"] #eyecare-overlay, [data-theme="oled_black"] #eyecare-overlay { mix-blend-mode: normal; }
+
+/* ===== 보기 설정 창 ===== */
+.vs-section { border-top: 1px solid var(--border-color); padding-top: 10px; }
+.vs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.vs-title { font-size: 12px; font-weight: 700; }
+.vs-sub { font-size: 10.5px; color: var(--text-muted); font-weight: 500; margin-left: 4px; }
+.vs-reset { font-size: 11px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border-color); color: var(--text-secondary); }
+.vs-reset:hover { color: var(--accent-color); border-color: var(--accent-color); }
+.vs-grid { display: grid; gap: 6px; }
+.vs-opt { position: relative; padding: 8px 8px; border-radius: 12px; border: 1px solid var(--border-color); font-size: 12px; font-weight: 600; text-align: left; line-height: 1.25; }
+.vs-opt.is-active { border: 2px solid var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); padding: 7px 7px; }
+.vs-opt.is-active::after { content: "✓"; position: absolute; right: 7px; top: 5px; font-size: 12px; font-weight: 800; color: var(--accent-color); }
+.vs-row { margin-bottom: 10px; }
+.vs-row-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.vs-row-label { font-size: 12px; font-weight: 600; }
+.vs-num { width: 76px; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font-size: 12px; text-align: right; }
+.vs-unit { font-size: 11px; color: var(--text-muted); min-width: 22px; }
+.vs-range { width: 100%; accent-color: var(--accent-color); cursor: pointer; height: 26px; }
+.vs-check { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; padding: 4px 0; cursor: pointer; }
+.vs-note { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+body.hide-zoom-btn .reader-zoom-control { display: none; }

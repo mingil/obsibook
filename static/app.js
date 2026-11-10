@@ -4131,15 +4131,13 @@ function stopTTS() {
 function toggleSettingsPopover() {
   const pop = document.getElementById('settings-popover');
   pop.classList.toggle('hidden');
+  if (!pop.classList.contains('hidden')) renderViewSettings();
 }
 
 function applySetting(key, val) {
   state.settings[key] = val;
   applySettingsToDOM();
-  apiFetch('/api/settings', {
-    method: 'POST',
-    body: JSON.stringify(state.settings),
-  }).catch(() => {});
+  saveSettingsSoon();
 }
 
 function stepSetting(key, delta) {
@@ -4150,6 +4148,165 @@ function stepSetting(key, delta) {
     const next = Math.max(1.4, Math.min(2.4, Number((Number(state.settings.lineHeight || 1.9) + delta).toFixed(2))));
     applySetting('lineHeight', next);
   }
+}
+
+/* =========================================================
+   보기 설정 창 (배율·테마·글꼴·크기·간격·폭·필터) — 현재 선택 표시 + 기본값 되돌리기
+   - 테마·글꼴·크기 등은 서버에 저장(모든 기기 공통), 본문 배율·배율 버튼 표시는 이 기기에만 저장
+   ========================================================= */
+const VIEW_DEFAULTS = { theme: 'warm_paper', fontFamily: 'ridi', fontSize: 18, lineHeight: 1.9, paraSpacing: 1.3, maxWidth: '820px', eyeCareFilter: 0, autoRestoreScroll: true };
+const VIEW_THEMES = [
+  { id: 'warm_paper', label: '🌾 웜 페이퍼', bg: '#f4efe6', fg: '#2b2620', bd: '#d5c7b2' },
+  { id: 'paper_white', label: '📄 화이트', bg: '#ffffff', fg: '#1f2328', bd: '#e5e7eb' },
+  { id: 'sepia', label: '📜 세피아', bg: '#eee4d3', fg: '#2f251b', bd: '#cbb99c' },
+  { id: 'soft_light', label: '☁️ 소프트 라이트', bg: '#f6f5f2', fg: '#22252a', bd: '#dcdad2' },
+  { id: 'forest', label: '🌿 칠판 그린', bg: '#eaf1ec', fg: '#1e2d24', bd: '#bcd2c3' },
+  { id: 'blossom', label: '🌸 블라썸', bg: '#f8efef', fg: '#2e2426', bd: '#e8d4d4' },
+  { id: 'eink', label: '🖋 전자잉크', bg: '#ffffff', fg: '#000000', bd: '#000000' },
+  { id: 'dark', label: '🌙 웜 다크', bg: '#18191c', fg: '#dcd8d0', bd: '#343842' },
+  { id: 'deep_forest', label: '🌲 딥 포레스트', bg: '#131b16', fg: '#d4e2da', bd: '#2d4035' },
+  { id: 'slate_night', label: '🌌 슬레이트 나이트', bg: '#1b2230', fg: '#d8dee9', bd: '#364156' },
+  { id: 'oled_black', label: '⬛ 완전 블랙', bg: '#000000', fg: '#d6d6d6', bd: '#262626' },
+];
+const VIEW_FONTS = [
+  { id: 'ridi', label: '리디바탕', css: "'RIDIBatang', 'MaruBuri', 'Noto Serif KR', Georgia, serif", kind: '명조' },
+  { id: 'maru', label: '마루부리', css: "'MaruBuri', 'RIDIBatang', 'Noto Serif KR', serif", kind: '명조' },
+  { id: 'gowun', label: '고운바탕', css: "'Gowun Batang', 'RIDIBatang', serif", kind: '명조' },
+  { id: 'nanum_myeongjo', label: '나눔명조', css: "'Nanum Myeongjo', 'Noto Serif KR', serif", kind: '명조' },
+  { id: 'serif', label: '본명조(Noto Serif)', css: "'Noto Serif KR', 'RIDIBatang', Georgia, serif", kind: '명조' },
+  { id: 'hahmlet', label: '함렛', css: "'Hahmlet', 'Noto Serif KR', serif", kind: '명조' },
+  { id: 'sans', label: '프리텐다드', css: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif", kind: '고딕' },
+  { id: 'noto_sans', label: '본고딕(Noto Sans)', css: "'Noto Sans KR', 'Pretendard', sans-serif", kind: '고딕' },
+  { id: 'nanum_gothic', label: '나눔고딕', css: "'Nanum Gothic', 'Pretendard', sans-serif", kind: '고딕' },
+  { id: 'ibm_plex', label: 'IBM Plex Sans KR', css: "'IBM Plex Sans KR', 'Pretendard', sans-serif", kind: '고딕' },
+  { id: 'gowun_dodum', label: '고운돋움', css: "'Gowun Dodum', 'Pretendard', sans-serif", kind: '고딕' },
+  { id: 'mono', label: 'JetBrains Mono', css: "'JetBrains Mono', monospace", kind: '고정폭' },
+];
+const VIEW_SLIDERS = [
+  { key: 'fontSize', label: '글자 크기', min: 12, max: 40, step: 1, unit: 'px' },
+  { key: 'lineHeight', label: '줄 간격', min: 1.2, max: 3.0, step: 0.05, unit: '배' },
+  { key: 'paraSpacing', label: '문단 간격', min: 0.4, max: 3.0, step: 0.1, unit: 'em' },
+  { key: 'maxWidth', label: '본문 폭', min: 480, max: 2400, step: 20, unit: 'px', note: '사진 크기도 본문 폭 안에서 맞춰집니다' },
+  { key: 'eyeCareFilter', label: '🌙 블루라이트 차단', min: 0, max: 60, step: 1, unit: '%' },
+];
+let _settingsSaveTimer = null;
+function saveSettingsSoon() {
+  clearTimeout(_settingsSaveTimer);
+  _settingsSaveTimer = setTimeout(() => {
+    apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(state.settings) }).catch(() => {});
+  }, 400);
+}
+function viewFontCss(id) { return (VIEW_FONTS.find((f) => f.id === id) || VIEW_FONTS[0]).css; }
+function clampNum(v, min, max) { v = Number(v); if (!isFinite(v)) return min; return Math.min(max, Math.max(min, v)); }
+function settingValue(key) {
+  const s = state.settings;
+  if (key === 'maxWidth') return s.maxWidth === '100%' ? 2400 : parseInt(s.maxWidth || '820', 10);
+  return Number(s[key] ?? VIEW_DEFAULTS[key]);
+}
+function setViewSetting(key, raw, rerender = false) {
+  const def = VIEW_SLIDERS.find((d) => d.key === key);
+  if (def) {
+    const v = clampNum(raw, def.min, def.max);
+    const rounded = def.step < 1 ? Number((Math.round(v / def.step) * def.step).toFixed(2)) : Math.round(v);
+    state.settings[key] = key === 'maxWidth' ? `${rounded}px` : rounded;
+  } else {
+    state.settings[key] = raw;
+  }
+  applySettingsToDOM();
+  saveSettingsSoon();
+  if (rerender) renderViewSettings(); else syncViewSettingsUI();
+}
+function resetViewSetting(key) {
+  if (key === 'zoom') { applyReaderZoom(1); renderViewSettings(); return; }
+  setViewSetting(key, key === 'maxWidth' ? 820 : VIEW_DEFAULTS[key], true);
+}
+function resetAllViewSettings() {
+  if (!confirm('보기 설정을 모두 기본값으로 되돌릴까요?\n(배경 테마·글꼴·크기·간격·본문 폭·필터, 그리고 이 기기의 본문 배율)')) return;
+  Object.assign(state.settings, VIEW_DEFAULTS);
+  applyReaderZoom(1);
+  applySettingsToDOM(); saveSettingsSoon(); renderViewSettings();
+}
+function setZoomButtonVisible(on) {
+  try { localStorage.setItem('obsibook_zoom_btn', on ? '1' : '0'); } catch (e) {}
+  document.body.classList.toggle('hide-zoom-btn', !on);
+}
+function zoomButtonVisible() { try { return localStorage.getItem('obsibook_zoom_btn') !== '0'; } catch (e) { return true; } }
+
+function vsRow(def, value) {
+  const id = `vs-${def.key}`;
+  const full = def.key === 'maxWidth' && state.settings.maxWidth === '100%';
+  return `<div class="vs-row">
+    <div class="vs-row-top">
+      <span class="vs-row-label">${def.label}</span>
+      <span class="flex items-center gap-1">
+        <input type="number" class="vs-num" id="${id}-num" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}" ${full ? 'disabled' : ''}
+          onchange="setViewSetting('${def.key}', this.value)" aria-label="${def.label} 숫자 입력" />
+        <span class="vs-unit">${def.unit}</span>
+        <button type="button" class="vs-reset" onclick="resetViewSetting('${def.key}')" title="기본값으로">↺</button>
+      </span>
+    </div>
+    <input type="range" class="vs-range" id="${id}-rng" min="${def.min}" max="${def.max}" step="${def.step}" value="${value}" ${full ? 'disabled' : ''}
+      oninput="setViewSetting('${def.key}', this.value)" aria-label="${def.label}" />
+    ${def.key === 'maxWidth' ? `<label class="vs-check"><span>화면 가득 채우기 <span class="vs-sub">본문 폭 제한 없음</span></span>
+      <input type="checkbox" ${full ? 'checked' : ''} onchange="state.settings.maxWidth = this.checked ? '100%' : '${settingValue('maxWidth') >= 2400 ? 1040 : settingValue('maxWidth')}px'; applySettingsToDOM(); saveSettingsSoon(); renderViewSettings();" /></label>` : ''}
+    ${def.note ? `<div class="vs-note">${def.note}</div>` : ''}
+  </div>`;
+}
+function renderViewSettings() {
+  const box = document.getElementById('view-settings-body');
+  if (!box) return;
+  const s = state.settings;
+  const z = Math.round((state.readerZoom || 1) * 100);
+  const devName = { phone: '휴대폰', tablet: '태블릿', desktop: 'PC', large: '큰 모니터' }[readerDeviceClass()] || '이 기기';
+  box.innerHTML = `
+  <div>
+    <div class="vs-head"><span class="vs-title">🔎 본문 배율 <span class="vs-sub">${devName}에만 적용 · 제목·본문·사진만 확대</span></span>
+      <button type="button" class="vs-reset" onclick="resetViewSetting('zoom')" title="100%로">↺ 100%</button></div>
+    <div class="vs-row-top"><span class="vs-row-label">배율</span>
+      <span class="flex items-center gap-1"><input type="number" class="vs-num" id="vs-zoom-num" min="50" max="300" step="5" value="${z}"
+        onchange="applyReaderZoom(clampNum(this.value,50,300)/100); syncViewSettingsUI();" aria-label="본문 배율 숫자 입력" /><span class="vs-unit">%</span></span></div>
+    <input type="range" class="vs-range" id="vs-zoom-rng" min="50" max="300" step="5" value="${z}" oninput="applyReaderZoom(Number(this.value)/100); syncViewSettingsUI();" aria-label="본문 배율" />
+    <label class="vs-check"><span>화면 오른쪽 아래에 배율 버튼(가− 가+) 표시</span>
+      <input type="checkbox" ${zoomButtonVisible() ? 'checked' : ''} onchange="setZoomButtonVisible(this.checked)" /></label>
+    <div class="vs-note">단축키: Alt(맥은 Option) + = / − / 0</div>
+  </div>
+  <div class="vs-section">
+    <div class="vs-head"><span class="vs-title">🎨 배경 테마 <span class="vs-sub">지금: ${(VIEW_THEMES.find((t) => t.id === s.theme) || VIEW_THEMES[0]).label}</span></span>
+      <button type="button" class="vs-reset" onclick="resetViewSetting('theme')">↺ 기본</button></div>
+    <div class="vs-grid grid-cols-2 sm:grid-cols-3">${VIEW_THEMES.map((t) => `<button type="button" class="vs-opt ${s.theme === t.id ? 'is-active' : ''}"
+      style="background:${t.bg};color:${t.fg};border-color:${s.theme === t.id ? '' : t.bd}" onclick="setViewSetting('theme','${t.id}',true)" aria-pressed="${s.theme === t.id}">${t.label}</button>`).join('')}</div>
+  </div>
+  <div class="vs-section">
+    <div class="vs-head"><span class="vs-title">🔤 본문 글꼴 <span class="vs-sub">지금: ${(VIEW_FONTS.find((f) => f.id === s.fontFamily) || VIEW_FONTS[0]).label}</span></span>
+      <button type="button" class="vs-reset" onclick="resetViewSetting('fontFamily')">↺ 기본</button></div>
+    <div class="vs-grid grid-cols-2">${VIEW_FONTS.map((f) => `<button type="button" class="vs-opt ${s.fontFamily === f.id ? 'is-active' : ''}"
+      style="font-family:${f.css.replace(/"/g, '&quot;')}" onclick="setViewSetting('fontFamily','${f.id}',true)" aria-pressed="${s.fontFamily === f.id}">${f.label}<br><span class="vs-sub" style="margin:0">${f.kind} · 가나다 Abc 123</span></button>`).join('')}</div>
+  </div>
+  <div class="vs-section">
+    <div class="vs-head"><span class="vs-title">📏 크기·간격·폭</span></div>
+    ${VIEW_SLIDERS.map((d) => vsRow(d, settingValue(d.key))).join('')}
+  </div>
+  <div class="vs-section">
+    <label class="vs-check"><span>문서 열 때 이전에 읽던 위치로 자동 이동</span>
+      <input type="checkbox" ${s.autoRestoreScroll ? 'checked' : ''} onchange="setViewSetting('autoRestoreScroll', this.checked)" /></label>
+  </div>
+  <div class="vs-section flex items-center justify-between">
+    <span class="vs-note" style="margin:0">기본값: 웜 페이퍼 · 리디바탕 · 18px · 줄 간격 1.9 · 문단 1.3em · 폭 820px · 필터 0% · 배율 100%</span>
+    <button type="button" class="vs-reset" style="white-space:nowrap" onclick="resetAllViewSettings()">↺ 전체 기본값으로</button>
+  </div>`;
+}
+function syncViewSettingsUI() {
+  // 슬라이더를 움직이는 중에는 창 전체를 다시 그리지 않고 숫자만 맞춤(끊김 방지)
+  VIEW_SLIDERS.forEach((d) => {
+    const v = settingValue(d.key);
+    const n = document.getElementById(`vs-${d.key}-num`), r = document.getElementById(`vs-${d.key}-rng`);
+    if (n && document.activeElement !== n) n.value = v;
+    if (r && document.activeElement !== r) r.value = v;
+  });
+  const z = Math.round((state.readerZoom || 1) * 100);
+  const zn = document.getElementById('vs-zoom-num'), zr = document.getElementById('vs-zoom-rng');
+  if (zn && document.activeElement !== zn) zn.value = z;
+  if (zr && document.activeElement !== zr) zr.value = z;
 }
 
 /* =========================================================
@@ -4168,7 +4325,7 @@ function readerZoomKey() { return "obsibook_reader_zoom_" + readerDeviceClass();
 function loadReaderZoom() {
   try {
     const v = Number(localStorage.getItem(readerZoomKey()));
-    return READER_ZOOM_STEPS.includes(v) ? v : 1;
+    return v >= 0.5 && v <= 3 ? v : 1;
   } catch (e) { return 1; }
 }
 function applyReaderZoom(z, save = true) {
@@ -4176,18 +4333,18 @@ function applyReaderZoom(z, save = true) {
   document.documentElement.style.setProperty("--reader-zoom", String(z));
   const lbl = document.getElementById("reader-zoom-label");
   if (lbl) lbl.textContent = Math.round(z * 100) + "%";
-  const i = READER_ZOOM_STEPS.indexOf(z);
   const out = document.getElementById("btn-reader-zoom-out"), inn = document.getElementById("btn-reader-zoom-in");
-  if (out) out.disabled = i <= 0;
-  if (inn) inn.disabled = i >= READER_ZOOM_STEPS.length - 1;
+  if (out) out.disabled = z <= READER_ZOOM_STEPS[0];
+  if (inn) inn.disabled = z >= READER_ZOOM_STEPS[READER_ZOOM_STEPS.length - 1];
   if (save) { try { localStorage.setItem(readerZoomKey(), String(z)); } catch (e) {} }
   if (save && state.currentDoc && typeof setupChapterPagination === "function") setupChapterPagination();
 }
 function stepReaderZoom(dir) {
   const cur = state.readerZoom || 1;
-  let i = READER_ZOOM_STEPS.indexOf(cur); if (i < 0) i = READER_ZOOM_STEPS.indexOf(1);
-  const n = READER_ZOOM_STEPS[Math.max(0, Math.min(READER_ZOOM_STEPS.length - 1, i + dir))];
+  // 다음/이전 단계(슬라이더로 정한 중간값에서도 자연스럽게 이어짐)
+  const n = dir > 0 ? (READER_ZOOM_STEPS.find((x) => x > cur + 0.001) ?? cur) : ([...READER_ZOOM_STEPS].reverse().find((x) => x < cur - 0.001) ?? cur);
   if (n !== cur) applyReaderZoom(n);
+  syncViewSettingsUI();
 }
 function resetReaderZoom() { applyReaderZoom(1); }
 
@@ -4203,11 +4360,13 @@ function applySettingsToDOM() {
     sans: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif",
     mono: "'JetBrains Mono', monospace",
   };
-  document.documentElement.style.setProperty('--reader-font', fontMap[s.fontFamily] || fontMap.ridi);
+  document.documentElement.style.setProperty('--reader-font', viewFontCss(s.fontFamily) || fontMap.ridi);
+  document.documentElement.style.setProperty('--reader-para-spacing', `${Number(s.paraSpacing ?? 1.3)}em`);
   document.documentElement.style.setProperty('--reader-font-size', `${s.fontSize || 18}px`);
   document.documentElement.style.setProperty('--reader-line-height', String(s.lineHeight || 1.9));
   document.documentElement.style.setProperty('--reader-max-width', s.maxWidth || '820px');
   applyReaderZoom(state.readerZoom || loadReaderZoom(), false);
+  document.body.classList.toggle('hide-zoom-btn', !zoomButtonVisible());
 
   const eyeVal = Number(s.eyeCareFilter || 0);
   const overlay = document.getElementById('eyecare-overlay');
