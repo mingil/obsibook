@@ -24,11 +24,13 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
-  <link rel="stylesheet" href="/static/styles.css?v=3.5.0" />
+  <link rel="stylesheet" href="/static/styles.css?v=3.6.0" />
 </head>
 <body>
   <!-- Eye-Care Warm Blue-Light Filter Overlay -->
   <div id="eyecare-overlay"></div>
+  <!-- 집중 모드 끝내기 버튼 (집중 모드일 때만 보임) -->
+  <button type="button" id="zen-exit-btn" class="zen-exit-btn" onclick="toggleZenMode(false)" title="집중 모드 끝내기 (Esc 또는 F)">✕ 집중 모드 끝내기</button>
 
   <!-- Top Reading Progress Bar -->
   <div id="top-progress-container">
@@ -802,7 +804,7 @@
                =============================================================== -->
           <div id="document-view" class="reader-container hidden">
             <!-- Top Interactive Folder Path & Sibling Switcher Bar -->
-            <div class="mb-4 p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2" style="background: var(--bg-surface); border-color: var(--border-color);">
+            <div id="doc-path-bar" class="mb-4 p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2" style="background: var(--bg-surface); border-color: var(--border-color);">
               <!-- Clickable Folder Breadcrumbs (Jump to any parent folder easily!) -->
               <div id="doc-interactive-breadcrumbs" class="flex flex-wrap items-center gap-1 text-xs font-semibold"></div>
 
@@ -829,7 +831,7 @@
             </div>
 
             <!-- Document Metadata & Study Action Header Card -->
-            <div class="rounded-2xl p-6 mb-6 border shadow-sm" style="background: var(--bg-surface); border-color: var(--border-color);">
+            <div id="doc-header-card" class="rounded-2xl p-6 mb-6 border shadow-sm" style="background: var(--bg-surface); border-color: var(--border-color);">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div class="flex items-center gap-2">
                   <span id="doc-folder-badge" onclick="openCurrentDocFolder()" class="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer hover:opacity-80" style="background: var(--accent-soft); color: var(--accent-color);"></span>
@@ -837,6 +839,15 @@
                 </div>
 
                 <div class="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onclick="toggleZenMode(true)"
+                    class="px-2.5 py-1.5 rounded-xl border text-xs font-bold transition hover:opacity-85"
+                    style="border-color: var(--accent-color); background: var(--accent-soft); color: var(--accent-color);"
+                    title="제목과 본문만 남기고 모두 숨기기 (단축키 F, 끝내기 Esc)"
+                  >
+                    ⛶ 집중 모드
+                  </button>
                   <button
                     type="button"
                     onclick="openSplitReferenceChooser()"
@@ -878,7 +889,7 @@
             </div>
 
             <!-- 🧠 Interactive Study & Cloze Recall Bar -->
-            <div class="mb-6 p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs" style="background: var(--bg-surface); border-color: var(--border-color);">
+            <div id="doc-study-bar" class="mb-6 p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs" style="background: var(--bg-surface); border-color: var(--border-color);">
               <div class="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -1048,6 +1059,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3.5.0"></script>
+  <script src="/static/app.js?v=3.6.0"></script>
 </body>
 </html>

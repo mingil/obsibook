@@ -1080,3 +1080,35 @@ html, body {
 .vs-check { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; padding: 4px 0; cursor: pointer; }
 .vs-note { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
 body.hide-zoom-btn .reader-zoom-control { display: none; }
+
+/* ===== 집중 모드: 제목·본문(·페이지 넘김·다음 문서)만 남김 ===== */
+body.zen-mode .app-header,
+body.zen-mode #study-tabs-bar,
+body.zen-mode #sidebar-left,
+body.zen-mode #sidebar-right,
+body.zen-mode #split-reference-pane,
+body.zen-mode #doc-path-bar,
+body.zen-mode #doc-study-bar,
+body.zen-mode .mobile-backdrop { display: none !important; }
+body.zen-mode #doc-header-card { background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin-bottom: 1.5rem !important; }
+body.zen-mode #doc-header-card > :not(#doc-main-title) { display: none !important; }
+body.zen-mode .reader-container { padding-top: 64px; }
+.zen-exit-btn {
+  display: none;
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 70;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  opacity: 0.35;
+  transition: opacity 0.2s ease;
+}
+.zen-exit-btn:hover, .zen-exit-btn:focus { opacity: 1; }
+body.zen-mode .zen-exit-btn { display: block; }
+@media (hover: none) { body.zen-mode .zen-exit-btn { opacity: 0.6; } }  /* 터치 기기는 마우스를 댈 수 없으니 조금 더 진하게 */

@@ -4271,6 +4271,10 @@ function renderViewSettings() {
     <div class="vs-note">단축키: Alt(맥은 Option) + = / − / 0</div>
   </div>
   <div class="vs-section">
+    <div class="vs-head"><span class="vs-title">🧘 집중 모드 <span class="vs-sub">제목·본문만 남기고 모두 숨김 (F / Esc)</span></span>
+      <button type="button" class="vs-reset" style="color:var(--accent-color);border-color:var(--accent-color)" onclick="toggleZenMode(true)" ${state.currentDoc ? '' : 'disabled title="문서를 연 뒤 사용할 수 있습니다"'}>⛶ 지금 시작</button></div>
+  </div>
+  <div class="vs-section">
     <div class="vs-head"><span class="vs-title">🎨 배경 테마 <span class="vs-sub">지금: ${(VIEW_THEMES.find((t) => t.id === s.theme) || VIEW_THEMES[0]).label}</span></span>
       <button type="button" class="vs-reset" onclick="resetViewSetting('theme')">↺ 기본</button></div>
     <div class="vs-grid grid-cols-2 sm:grid-cols-3">${VIEW_THEMES.map((t) => `<button type="button" class="vs-opt ${s.theme === t.id ? 'is-active' : ''}"
@@ -4471,17 +4475,30 @@ function setupMobileAndTouchUX() {
   );
 }
 
-function toggleZenMode() {
-  const left = document.getElementById('sidebar-left');
-  const right = document.getElementById('sidebar-right');
-  const isAlreadyZen = left.classList.contains('collapsed') && right.classList.contains('collapsed');
-  if (isAlreadyZen) {
-    left.classList.remove('collapsed');
-  } else {
-    left.classList.add('collapsed');
-    right.classList.add('collapsed');
-  }
+/* 집중 모드: 제목·본문만 남기고 모두 숨김 + (지원하면) 브라우저 전체화면
+   - 들어가기: 문서 화면 "⛶ 집중 모드" 버튼 / 보기 설정 / F 키
+   - 나오기: 오른쪽 위 ✕ / Esc / F 키 (전체화면을 Esc로 끄면 집중 모드도 같이 끝남) */
+function toggleZenMode(force) {
+  const on = typeof force === 'boolean' ? force : !document.body.classList.contains('zen-mode');
+  if (on && !state.currentDoc) return; // 문서를 볼 때만
+  document.body.classList.toggle('zen-mode', on);
+  document.getElementById('settings-popover')?.classList.add('hidden');
+  const el = document.documentElement;
+  const isFs = () => document.fullscreenElement || document.webkitFullscreenElement;
+  try {
+    if (on && !isFs()) {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const r = req && req.call(el); if (r && r.catch) r.catch(() => {});
+    } else if (!on && isFs()) {
+      const ex = document.exitFullscreen || document.webkitExitFullscreen;
+      const r = ex && ex.call(document); if (r && r.catch) r.catch(() => {});
+    }
+  } catch (e) { /* 전체화면 미지원(예: 아이폰) → 화면 정리만 */ }
+  if (state.currentDoc && typeof setupChapterPagination === 'function') setupChapterPagination();
 }
+['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) => document.addEventListener(ev, () => {
+  if (!(document.fullscreenElement || document.webkitFullscreenElement) && document.body.classList.contains('zen-mode')) toggleZenMode(false);
+}));
 
 function setupKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
@@ -4491,6 +4508,7 @@ function setupKeyboardShortcuts() {
       return;
     }
     if (e.key === 'Escape') {
+      if (document.body.classList.contains('zen-mode')) { toggleZenMode(false); return; }
       closeQuickSwitcher();
       closeFlashcardModal();
       closeBookmarkModal();
