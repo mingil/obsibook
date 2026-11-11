@@ -1146,9 +1146,16 @@ body.zen-mode .zen-exit-btn { display: block; }
 @media (max-width: 400px) {
   #header-vault-title { display: none; }
 }
-/* 아주 좁은 화면(320px대): 📂 빠른 이동은 ☰ 목차의 검색·폴더로 대신 */
-@media (max-width: 350px) {
+/* 휴대폰: 상단에 ⛶ 집중 버튼을 두는 대신 📂 빠른 이동은 ☰ 목차의 검색·폴더로 대신 */
+@media (max-width: 440px) {
   .app-header button[onclick="openQuickSwitcher()"] { display: none !important; }
+}
+/* 아주 좁은 화면(320px대): 버튼 조금 작게, 뽀모도로는 🍅만 (남은 시간은 눌러서 확인) */
+@media (max-width: 350px) {
+  .app-header > div { gap: 3px !important; }
+  .app-header > div > button:not(.hidden),
+  .app-header > div > .relative > button:first-of-type:not(.hidden) { min-width: 34px; min-height: 36px; padding-left: 4px; padding-right: 4px; }
+  #pomodoro-time-label { display: none; }
 }
 /* 서랍이 열려 있으면 배율 버튼 숨김 (서랍 내용 위에 떠서 가리던 문제) */
 body.drawer-open .reader-zoom-control { display: none !important; }
