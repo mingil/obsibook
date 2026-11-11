@@ -4423,6 +4423,7 @@ function syncMobileBackdrop() {
   } else {
     backdrop.classList.remove('active');
   }
+  document.body.classList.toggle('drawer-open', isSmallLeft || isSmallRight);
 }
 
 function closeMobileDrawers() {
@@ -4508,6 +4509,11 @@ function toggleZenMode(force) {
 }));
 
 function setupKeyboardShortcuts() {
+  // 창 바깥(어두운 배경)을 누르면 닫기 — 입력칸이 없는 창만 (메모·도메인 창은 입력 내용 보호를 위해 ✕로만)
+  document.addEventListener('click', (e) => {
+    if (e.target?.id === 'quick-switcher-modal') closeQuickSwitcher();
+    else if (e.target?.id === 'flashcard-modal') closeFlashcardModal();
+  });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();

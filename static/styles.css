@@ -1112,3 +1112,59 @@ body.zen-mode .reader-container { padding-top: 64px; }
 .zen-exit-btn:hover, .zen-exit-btn:focus { opacity: 1; }
 body.zen-mode .zen-exit-btn { display: block; }
 @media (hover: none) { body.zen-mode .zen-exit-btn { opacity: 0.6; } }  /* 터치 기기는 마우스를 댈 수 없으니 조금 더 진하게 */
+
+/* =========================================================
+   휴대폰 상단 바 정리 (2026-11-11)
+   - 버튼이 서로 밀려 겹치던 문제: 버튼은 줄어들지 않게, 공간이 모자라면 덜 중요한 것부터 숨김
+   - 손가락으로 누르기 쉬운 크기(최소 38px)
+   - 열린 목차·학습패널이 탭 줄·배율 버튼 아래에 깔리지 않게
+   ========================================================= */
+@media (max-width: 640px) {
+  .app-header { padding: 0 6px; gap: 6px; }
+  .app-header > div { gap: 5px !important; }
+  .app-header > div:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .app-header > div:last-child { flex: 0 0 auto; }
+  .app-header > div > button:not(.hidden),
+  .app-header > div > .relative > button:first-of-type:not(.hidden) {
+    flex-shrink: 0;
+    min-width: 38px;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .app-header > div > .relative { flex-shrink: 0; }
+  /* 휴대폰에선 브라우저 뒤로가기 제스처가 있어 앞/뒤 버튼은 숨김, 외부 접속(🌐) 설정은 PC에서 */
+  .app-header .nav-history,
+  #btn-domain-modal { display: none !important; }
+  /* 서재 이름은 공간이 될 때만 */
+  #header-vault-title { max-width: 72px; }
+  /* 열린 서랍(목차·학습패널)은 탭 줄(35)·배율 버튼(30) 위로, 어두운 배경은 그 사이 */
+  .sidebar-left:not(.collapsed), .sidebar-right:not(.collapsed) { z-index: 37; }
+  .mobile-backdrop { z-index: 34; }
+}
+@media (max-width: 400px) {
+  #header-vault-title { display: none; }
+}
+/* 아주 좁은 화면(320px대): 📂 빠른 이동은 ☰ 목차의 검색·폴더로 대신 */
+@media (max-width: 350px) {
+  .app-header button[onclick="openQuickSwitcher()"] { display: none !important; }
+}
+/* 서랍이 열려 있으면 배율 버튼 숨김 (서랍 내용 위에 떠서 가리던 문제) */
+body.drawer-open .reader-zoom-control { display: none !important; }
+
+/* 터치 화면: 창의 닫기(✕) 버튼을 손가락 크기로 */
+@media (pointer: coarse) {
+  [id$="-modal"] button[onclick^="close"],
+  #settings-popover button[aria-label="닫기"],
+  #pomodoro-popover button[onclick="togglePomodoroPopover()"] {
+    min-width: 40px; min-height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+}
+
+/* 태블릿(아이패드)·좁은 PC 창: 상단 버튼 글자가 두 줄로 꺾이던 문제 → 한 줄 유지, 공간이 모자라면 아이콘만 (서재 이름·타이머는 유지) */
+.app-header button { white-space: nowrap; }
+@media (max-width: 1180px) {
+  .app-header button > span.hidden { display: none !important; }
+}
