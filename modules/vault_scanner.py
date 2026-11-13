@@ -1052,6 +1052,7 @@ class VaultScanner:
             p_info = progress_map.get(doc["path"])
             doc["scroll_percent"] = p_info["scroll_percent"] if p_info else 0.0
             doc["is_completed"] = bool(p_info["is_completed"]) if p_info else False
+            doc["completed_count"] = int(p_info.get("completed_count") or (1 if p_info["is_completed"] else 0)) if p_info else 0
             doc["last_read_at"] = p_info["last_read_at"] if p_info else ""
             doc["heading_text"] = p_info["heading_text"] if p_info else ""
 
@@ -1070,7 +1071,7 @@ class VaultScanner:
                     anc_node = ensure_dir_node(anc_path)
                     anc_node["total_doc_count"] += 1
                     anc_node["doc_count"] = anc_node["total_doc_count"]
-                    if doc["is_completed"]:
+                    if doc["is_completed"] or doc.get("completed_count", 0) > 0:   # 한 번이라도 완독(다시 읽는 중 포함)
                         anc_node["completed_count"] += 1
                     elif doc["scroll_percent"] > 0:
                         anc_node["in_progress_count"] += 1
@@ -1118,6 +1119,7 @@ class VaultScanner:
                         "doc_type": d.get("doc_type", "markdown"),
                         "scroll_percent": d.get("scroll_percent", 0.0),
                         "is_completed": d.get("is_completed", False),
+                        "completed_count": d.get("completed_count", 0),
                         "reading_time_min": d.get("reading_time_min", 1),
                     }
                     for d in n["direct_docs"]
@@ -1148,7 +1150,7 @@ class VaultScanner:
                 "total_doc_count": len(root_direct_docs),
                 "doc_count": len(root_direct_docs),
                 "subfolder_count": 0,
-                "completed_count": sum(1 for d in root_direct_docs if d.get("is_completed")),
+                "completed_count": sum(1 for d in root_direct_docs if d.get("is_completed") or d.get("completed_count", 0) > 0),
                 "in_progress_count": sum(
                     1 for d in root_direct_docs if not d.get("is_completed") and d.get("scroll_percent", 0) > 0
                 ),

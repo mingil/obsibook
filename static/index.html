@@ -24,7 +24,7 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
-  <link rel="stylesheet" href="/static/styles.css?v=3.7.1" />
+  <link rel="stylesheet" href="/static/styles.css?v=3.8.0" />
 </head>
 <body>
   <!-- Eye-Care Warm Blue-Light Filter Overlay -->
@@ -886,6 +886,16 @@
                   >
                     ○ 완독 표시
                   </button>
+                  <button
+                    type="button"
+                    id="btn-doc-restart"
+                    onclick="restartCurrentDoc()"
+                    class="hidden px-3 py-1.5 rounded-xl border text-xs font-bold transition"
+                    style="border-color: var(--border-color); background: var(--bg-primary);"
+                    title="처음부터 다시 읽기 (완독 횟수는 그대로 남아요)"
+                  >
+                    ↻ 처음부터 다시 읽기
+                  </button>
                 </div>
               </div>
 
@@ -1070,6 +1080,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3.7.1"></script>
+  <script src="/static/app.js?v=3.8.0"></script>
 </body>
 </html>

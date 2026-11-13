@@ -404,11 +404,12 @@ def _build_library_response(force_rescan: bool = False) -> dict:
     settings = db.get_reader_settings()
     study_stats = db.get_study_stats()
 
-    completed_total = sum(1 for d in tree["documents"] if d.get("is_completed"))
+    # 완독 = 한 번이라도 완독(다시 읽는 중 포함), 읽는 중 = 아직 한 번도 완독 안 했고 읽은 적 있음
+    completed_total = sum(1 for d in tree["documents"] if d.get("is_completed") or d.get("completed_count", 0) > 0)
     in_progress_total = sum(
         1
         for d in tree["documents"]
-        if not d.get("is_completed") and d.get("scroll_percent", 0) > 0
+        if not (d.get("is_completed") or d.get("completed_count", 0) > 0) and d.get("scroll_percent", 0) > 0
     )
 
     return {
@@ -514,6 +515,23 @@ def toggle_doc_complete(payload: ToggleCompletePayload, _: bool = Depends(verify
         folder=payload.folder,
     )
     return {"status": "updated", "progress": updated, "study_stats": db.get_study_stats()}
+
+
+class RestartPayload(BaseModel):
+    doc_path: str
+
+
+@app.post("/api/progress/restart")
+def restart_doc_reading(payload: RestartPayload, _: bool = Depends(verify_auth)):
+    """완독한 문서를 처음부터 다시 읽기(완독 횟수는 유지)."""
+    db = get_db()
+    return {"status": "restarted", "progress": db.restart_reading(payload.doc_path)}
+
+
+@app.get("/api/progress")
+def get_doc_progress(doc_path: str, _: bool = Depends(verify_auth)):
+    """다른 기기에서 읽은 최신 위치 확인용(가벼운 조회)."""
+    return {"progress": get_db().get_progress(doc_path)}
 
 
 # =====================================================================
@@ -673,6 +691,7 @@ def search_vault(
         p = progress_map.get(r["path"])
         r["scroll_percent"] = p["scroll_percent"] if p else 0.0
         r["is_completed"] = bool(p["is_completed"]) if p else False
+        r["completed_count"] = int(p.get("completed_count") or 0) if p else 0
     return {"query": q, "folder": folder, "tag": tag, "results": results}
 
 

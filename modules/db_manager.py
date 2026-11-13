@@ -165,6 +165,13 @@ class DatabaseManager:
                 CREATE INDEX IF NOT EXISTS idx_vault_cache_root ON vault_doc_cache(vault_root);
                 """
             )
+            # 2026-11-13: 여러 번 완독 지원 — completed_count(완독 횟수), pass_seconds(이번 회차 읽은 시간)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(reading_progress)")}
+            if "completed_count" not in cols:
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN completed_count INTEGER NOT NULL DEFAULT 0")
+                conn.execute("UPDATE reading_progress SET completed_count = 1 WHERE is_completed = 1")
+            if "pass_seconds" not in cols:
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN pass_seconds INTEGER NOT NULL DEFAULT 0")
 
     @staticmethod
     def _now() -> str:
@@ -203,6 +210,10 @@ class DatabaseManager:
             (today, sec, pomo, quiz, xp, now),
         )
 
+    COMPLETE_AT = 96.0      # 이 이상 내려가면 이번 회차 완독
+    RESTART_BELOW = 15.0    # 완독한 문서를 이보다 위에서 읽으면 새 회차 시작
+    MIN_PASS_SECONDS = 60   # 다시 읽기 회차를 1회 완독으로 세려면 최소 이만큼 읽어야 함
+
     def save_progress(
         self,
         doc_path: str,
@@ -225,14 +236,26 @@ class DatabaseManager:
             ).fetchone()
 
             newly_completed = False
+            counted = False
             if existing:
-                completed_val = (
-                    int(is_completed)
-                    if is_completed is not None
-                    else (1 if scroll_percent >= 96.0 else existing["is_completed"])
-                )
+                pass_sec = int(existing["pass_seconds"] or 0) + clean_sec
+                count = int(existing["completed_count"] or 0)
+                if is_completed is not None:
+                    completed_val = int(is_completed)
+                elif existing["is_completed"] and scroll_percent < self.RESTART_BELOW:
+                    # 완독한 문서를 처음 부분부터 다시 읽기 시작 → 새 회차(완독 횟수는 그대로)
+                    completed_val = 0
+                    pass_sec = clean_sec
+                elif not existing["is_completed"] and scroll_percent >= self.COMPLETE_AT:
+                    completed_val = 1
+                else:
+                    completed_val = existing["is_completed"]
                 if completed_val == 1 and existing["is_completed"] == 0:
-                    newly_completed = True
+                    # 다시 읽기 회차는 실제로 읽은 시간이 있어야 1회로 셈(맨 아래로 휙 내리기만 한 경우 제외)
+                    if count == 0 or pass_sec >= self.MIN_PASS_SECONDS or is_completed:
+                        count += 1
+                        counted = True
+                    newly_completed = counted
                 new_title = title or existing["title"]
                 new_folder = folder or existing["folder"]
                 total_sec = existing["total_read_seconds"] + clean_sec
@@ -248,6 +271,8 @@ class DatabaseManager:
                         heading_text = ?,
                         is_completed = ?,
                         total_read_seconds = ?,
+                        completed_count = ?,
+                        pass_seconds = ?,
                         last_read_at = ?
                     WHERE doc_path = ?
                     """,
@@ -260,6 +285,8 @@ class DatabaseManager:
                         heading_text,
                         completed_val,
                         total_sec,
+                        count,
+                        pass_sec,
                         now,
                         doc_path,
                     ),
@@ -277,8 +304,8 @@ class DatabaseManager:
                     INSERT INTO reading_progress (
                         doc_path, title, folder, scroll_percent, scroll_top,
                         heading_id, heading_text, is_completed, read_count,
-                        total_read_seconds, last_read_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                        total_read_seconds, last_read_at, completed_count, pass_seconds
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                     """,
                     (
                         doc_path,
@@ -291,6 +318,8 @@ class DatabaseManager:
                         completed_val,
                         clean_sec,
                         now,
+                        completed_val,
+                        clean_sec,
                     ),
                 )
 
@@ -315,13 +344,15 @@ class DatabaseManager:
             if existing:
                 new_state = 0 if existing["is_completed"] else 1
                 new_pct = 100.0 if new_state == 1 and existing["scroll_percent"] < 95.0 else existing["scroll_percent"]
+                count = int(existing["completed_count"] or 0)
+                count = count + 1 if new_state == 1 else max(0, count - 1)   # 완독 표시 = 1회 추가, 해제 = 1회 취소
                 conn.execute(
                     """
                     UPDATE reading_progress
-                    SET is_completed = ?, scroll_percent = ?, last_read_at = ?
+                    SET is_completed = ?, scroll_percent = ?, completed_count = ?, pass_seconds = 0, last_read_at = ?
                     WHERE doc_path = ?
                     """,
-                    (new_state, new_pct, now, doc_path),
+                    (new_state, new_pct, count, now, doc_path),
                 )
                 if new_state == 1:
                     self._record_daily_activity(conn, add_xp=50)
@@ -331,8 +362,8 @@ class DatabaseManager:
                     INSERT INTO reading_progress (
                         doc_path, title, folder, scroll_percent, scroll_top,
                         heading_id, heading_text, is_completed, read_count,
-                        total_read_seconds, last_read_at
-                    ) VALUES (?, ?, ?, 100.0, 0.0, '', '', 1, 1, 0, ?)
+                        total_read_seconds, last_read_at, completed_count, pass_seconds
+                    ) VALUES (?, ?, ?, 100.0, 0.0, '', '', 1, 1, 0, ?, 1, 0)
                     """,
                     (doc_path, title or Path(doc_path).stem, folder, now),
                 )
@@ -341,6 +372,21 @@ class DatabaseManager:
                 "SELECT * FROM reading_progress WHERE doc_path = ?", (doc_path,)
             ).fetchone()
             return dict(row)
+
+    def restart_reading(self, doc_path: str) -> Optional[Dict[str, Any]]:
+        """완독한 문서를 처음부터 다시 읽기: 위치 0, 새 회차 시작(완독 횟수는 유지)."""
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE reading_progress
+                SET is_completed = 0, scroll_percent = 0.0, scroll_top = 0.0, heading_id = '', heading_text = '',
+                    pass_seconds = 0, last_read_at = ?
+                WHERE doc_path = ?
+                """,
+                (self._now(), doc_path),
+            )
+            row = conn.execute("SELECT * FROM reading_progress WHERE doc_path = ?", (doc_path,)).fetchone()
+            return dict(row) if row else None
 
     def get_progress(self, doc_path: str) -> Optional[Dict[str, Any]]:
         with self._get_conn() as conn:

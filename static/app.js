@@ -1344,12 +1344,50 @@ function prefetchDoc(docPath) {
   state.prefetchInFlight.set(docPath, p);
 }
 
+/* 여러 번 완독: 완독 횟수 + 이번 회차 진도 (2026-11-13) */
+function docCompletedCount(d) {
+  if (!d) return 0;
+  const c = Number(d.completed_count || 0);
+  return c > 0 ? c : (d.is_completed ? 1 : 0);
+}
+function docStatusBadge(d, variant) {
+  const pct = Math.round(Number(d.scroll_percent || 0));
+  const cnt = docCompletedCount(d);
+  const done = Boolean(d.is_completed);
+  const cntTxt = cnt > 1 ? `${cnt}회 ` : '';
+  const green = 'color:#059669';
+  const acc = 'color: var(--accent-color)';
+  if (variant === 'tree') {
+    if (cnt > 0 && !done && pct > 0) return `<span class="text-[10px] font-bold" style="${acc}" title="${cnt}회 완독 · 다시 읽는 중 ${pct}%">✓${cnt > 1 ? cnt : ''}·${pct}%</span>`;
+    if (cnt > 0) return `<span class="font-bold text-[10px]" style="${green}" title="${cnt}회 완독">✓${cnt > 1 ? cnt : ''}</span>`;
+    return pct > 0 ? `<span class="text-[10px] font-bold" style="${acc}">${pct}%</span>` : '';
+  }
+  if (variant === 'pill') {
+    const parts = [];
+    if (cnt > 0) parts.push(`<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700">✓ ${cntTxt}완독</span>`);
+    if (!done && pct > 0) parts.push(`<span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-soft); color: var(--accent-color);">${cnt > 0 ? '다시 ' : ''}${pct}% 읽음</span>`);
+    if (!parts.length) parts.push(`<span class="px-2.5 py-1 rounded-full text-xs opacity-60" style="background: var(--bg-secondary);">약 ${d.reading_time_min}분</span>`);
+    return `<span class="inline-flex flex-wrap gap-1 justify-end">${parts.join('')}</span>`;
+  }
+  // list (기본)
+  if (cnt > 0 && !done && pct > 0) return `<span class="font-bold text-[11px]" style="${acc}">✓${cnt}회 · 다시 ${pct}%</span>`;
+  if (cnt > 0) return `<span class="font-bold text-[11px]" style="${green}">✓ ${cntTxt}완독</span>`;
+  return pct > 0 ? `<span class="font-bold text-[11px]" style="${acc}">${pct}%</span>` : `<span class="text-[11px] opacity-50">${d.reading_time_min}분</span>`;
+}
+
 function enrichDocWithLibraryState(rawDoc) {
   const doc = { ...rawDoc };
   if (!state.library) return doc;
 
   const libDoc = (state.library.documents || []).find((d) => d.path === doc.path);
   const existingProg = doc.progress || {};
+  // 서버에서 받은 문서 진도가 라이브러리(앱을 연 시점) 값보다 최근이면 그것을 쓴다
+  if (libDoc && existingProg.last_read_at && (!libDoc.last_read_at || existingProg.last_read_at > libDoc.last_read_at)) {
+    libDoc.scroll_percent = Number(existingProg.scroll_percent || 0);
+    libDoc.is_completed = Boolean(existingProg.is_completed);
+    libDoc.completed_count = Number(existingProg.completed_count || 0);
+    libDoc.last_read_at = existingProg.last_read_at;
+  }
   doc.progress = {
     doc_path: doc.path,
     scroll_percent: libDoc ? Number(libDoc.scroll_percent || 0) : Number(existingProg.scroll_percent || 0),
@@ -1357,6 +1395,7 @@ function enrichDocWithLibraryState(rawDoc) {
     heading_id: existingProg.heading_id || '',
     heading_text: (libDoc && libDoc.heading_text) || existingProg.heading_text || '',
     is_completed: libDoc ? (libDoc.is_completed ? 1 : 0) : Number(existingProg.is_completed || 0),
+    completed_count: libDoc ? docCompletedCount(libDoc) : Number(existingProg.completed_count || 0),
     last_read_at: (libDoc && libDoc.last_read_at) || existingProg.last_read_at || '',
   };
 
@@ -1375,6 +1414,7 @@ function syncLocalDocProgress(docPath, progressObj) {
   if (!state.library || !progressObj) return;
   const pct = Number(progressObj.scroll_percent || 0);
   const done = Boolean(progressObj.is_completed);
+  const cnt = Number(progressObj.completed_count || 0);
   const lastRead = progressObj.last_read_at || '';
   const headingText = progressObj.heading_text || '';
 
@@ -1382,6 +1422,7 @@ function syncLocalDocProgress(docPath, progressObj) {
     if (d && d.path === docPath) {
       d.scroll_percent = pct;
       d.is_completed = done;
+      d.completed_count = cnt;
       if (lastRead) d.last_read_at = lastRead;
       if (headingText) d.heading_text = headingText;
     }
@@ -1412,6 +1453,7 @@ function syncLocalDocProgress(docPath, progressObj) {
       scroll_percent: pct,
       heading_text: headingText,
       is_completed: done ? 1 : 0,
+      completed_count: cnt,
       last_read_at: lastRead || '방금 전',
     });
     state.library.recent_reads = recList.slice(0, 12);
@@ -1419,8 +1461,8 @@ function syncLocalDocProgress(docPath, progressObj) {
 
   // Recompute global stats
   const allDocs = state.library.documents || [];
-  state.library.stats.completed_docs = allDocs.filter((d) => d.is_completed).length;
-  state.library.stats.in_progress_docs = allDocs.filter((d) => !d.is_completed && (d.scroll_percent || 0) > 0).length;
+  state.library.stats.completed_docs = allDocs.filter((d) => docCompletedCount(d) > 0).length;
+  state.library.stats.in_progress_docs = allDocs.filter((d) => docCompletedCount(d) === 0 && (d.scroll_percent || 0) > 0).length;
 
   const cached = state.docCache.get(docPath);
   if (cached) {
@@ -1428,23 +1470,16 @@ function syncLocalDocProgress(docPath, progressObj) {
   }
 
   updateHeaderAndStats();
-  updateSidebarDocBadgeInPlace(docPath, pct, done);
+  updateSidebarDocBadgeInPlace(docPath, pct, done, cnt);
 }
 
-function updateSidebarDocBadgeInPlace(docPath, pct, isCompleted) {
-  const rows = document.querySelectorAll('.tree-doc-row');
-  rows.forEach((row) => {
+function updateSidebarDocBadgeInPlace(docPath, pct, isCompleted, completedCount = 0) {
+  // 목록 표시와 같은 규칙(docStatusBadge)으로 — 여러 번 완독·다시 읽는 중 표시
+  const html = docStatusBadge({ scroll_percent: pct, is_completed: isCompleted, completed_count: completedCount }, 'tree');
+  document.querySelectorAll('.tree-doc-row').forEach((row) => {
     if (row.dataset.docPath === docPath) {
       const badgeSpan = row.querySelector('.tree-doc-badge');
-      if (badgeSpan) {
-        if (isCompleted) {
-          badgeSpan.innerHTML = `<span class="text-emerald-600 font-bold text-[10px]">✓</span>`;
-        } else if (Math.round(pct) > 0) {
-          badgeSpan.innerHTML = `<span class="text-[10px] font-bold" style="color: var(--accent-color);">${Math.round(pct)}%</span>`;
-        } else {
-          badgeSpan.innerHTML = '';
-        }
-      }
+      if (badgeSpan) badgeSpan.innerHTML = html;
     }
   });
 }
@@ -1581,7 +1616,7 @@ function renderDashboard() {
         <div class="flex items-center gap-3 flex-shrink-0">
           <div class="text-right">
             <div class="text-xl font-extrabold" style="color: var(--accent-color);">${pct}%</div>
-            <div class="text-[11px]" style="color: var(--text-muted);">${last.is_completed ? '✓ 완독함' : '공부 중'}</div>
+            <div class="text-[11px]" style="color: var(--text-muted);">${docCompletedCount(last) > 0 ? (last.is_completed ? `✓ ${docCompletedCount(last) > 1 ? docCompletedCount(last) + '회 ' : ''}완독함` : `✓${docCompletedCount(last)}회 완독 · 다시 읽는 중`) : '공부 중'}</div>
           </div>
           <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow" style="background: var(--accent-color);">
             이어 공부하기 →
@@ -1668,11 +1703,7 @@ function renderDashboard() {
                   ${previewDocs
                     .map((d) => {
                       const pct = Math.round(d.scroll_percent || 0);
-                      const statusBadge = d.is_completed
-                        ? `<span class="text-emerald-600 font-bold text-[11px]">✓ 완독</span>`
-                        : pct > 0
-                        ? `<span class="font-bold text-[11px]" style="color: var(--accent-color);">${pct}%</span>`
-                        : `<span class="text-[11px] opacity-50">${d.reading_time_min}분</span>`;
+                      const statusBadge = docStatusBadge(d, 'list');
                       return `
                         <div onmouseenter="prefetchDoc('${escapeJsAttr(d.path)}')"
                              onclick="openDocument('${escapeJsAttr(d.path)}')"
@@ -1980,11 +2011,7 @@ function renderFolderExplorerContent() {
     .map((d) => {
       const pct = Math.round(d.scroll_percent || 0);
       const icon = d.doc_type === 'pdf' ? '📕' : '📄';
-      const statusHtml = d.is_completed
-        ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-700">✓ 완독</span>`
-        : pct > 0
-        ? `<span class="px-2.5 py-1 rounded-full text-xs font-bold" style="background: var(--accent-soft); color: var(--accent-color);">${pct}% 읽음</span>`
-        : `<span class="px-2.5 py-1 rounded-full text-xs opacity-60" style="background: var(--bg-secondary);">약 ${d.reading_time_min}분</span>`;
+      const statusHtml = docStatusBadge(d, 'pill');
 
       return `
         <div onmouseenter="prefetchDoc('${escapeJsAttr(d.path)}')"
@@ -2189,11 +2216,7 @@ function renderRecursiveTreeHTML(node) {
           .map((d) => {
             const isActiveDoc = state.currentView === 'doc' && state.currentDoc && state.currentDoc.path === d.path;
             const pct = Math.round(d.scroll_percent || 0);
-            const badge = d.is_completed
-              ? `<span class="text-emerald-600 font-bold text-[10px]">✓</span>`
-              : pct > 0
-              ? `<span class="text-[10px] font-bold" style="color: var(--accent-color);">${pct}%</span>`
-              : '';
+            const badge = docStatusBadge(d, 'tree');
             const icon = d.doc_type === 'pdf' ? '📕' : '📄';
             return `
               <div data-doc-path="${escapeHtml(d.path)}"
@@ -2501,6 +2524,7 @@ async function openDocument(docPath, options = {}) {
     .join('');
 
   updateCompleteButtonUI(Boolean(doc.progress && doc.progress.is_completed));
+  setTimeout(checkRemoteProgress, 1500);   // 다른 기기에서 더 최근에 읽었는지 확인
 
   // Render Document Content (Markdown or PDF)
   if (doc.doc_type === 'pdf') {
@@ -2555,6 +2579,8 @@ async function openDocument(docPath, options = {}) {
   const viewport = document.getElementById('reader-viewport');
   state.suppressScrollSave = true;
   const savedPct = doc.progress ? Number(doc.progress.scroll_percent || 0) : 0;
+  state.lastSavedPct = savedPct;
+  state.userInteracted = false;
 
   if (options.targetHeadingId) {
     setTimeout(() => {
@@ -3599,6 +3625,10 @@ function renderPrevNextNav(doc) {
    ========================================================= */
 function setupScrollListener() {
   const viewport = document.getElementById('reader-viewport');
+  // 사람이 직접 조작했는지 표시(문서를 연 뒤 자동 이동·화면 높이 변화와 구분)
+  ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) =>
+    document.addEventListener(ev, () => { state.userInteracted = true; }, { passive: true, capture: true })
+  );
   viewport.addEventListener(
     'scroll',
     () => {
@@ -3620,6 +3650,11 @@ function setupScrollListener() {
         updateActiveHeadingOnScroll();
 
         if (state.suppressScrollSave) return;
+        // 위치가 사실상 그대로면 저장하지 않음 — 문서를 연 직후 "읽던 위치로 이동"만으로 저장해서
+        // 다른 기기가 더 최근에 읽은 진도를 덮어쓰는 문제 방지 (2026-11-13)
+        if (typeof state.lastSavedPct === 'number' && Math.abs(pct - state.lastSavedPct) < 0.5) return;
+        // 사용자가 직접 움직이기 전(사진이 늦게 뜨며 화면 높이가 바뀌는 등)의 스크롤은 저장하지 않음
+        if (!state.userInteracted) return;
 
         clearTimeout(state.saveTimer);
         state.saveTimer = setTimeout(() => {
@@ -3635,7 +3670,8 @@ function updateScrollIndicators(pct) {
   const rounded = Math.round(pct);
   document.getElementById('top-progress-bar').style.width = `${pct}%`;
   const pill = document.getElementById('header-progress-pill');
-  if (pill) pill.textContent = `${rounded}%`;
+  const cnt = state.currentDoc ? docCompletedCount(state.currentDoc.progress || {}) : 0;
+  if (pill) pill.textContent = cnt > 0 ? `✓${cnt}회 · ${rounded}%` : `${rounded}%`;
 }
 
 function updateActiveHeadingOnScroll() {
@@ -3692,6 +3728,7 @@ async function saveCurrentProgress() {
     });
     if (res.progress && state.currentDoc) {
       state.currentDoc.progress = res.progress;
+      state.lastSavedPct = Number(res.progress.scroll_percent || 0);
       updateCompleteButtonUI(Boolean(res.progress.is_completed));
       syncLocalDocProgress(state.currentDoc.path, res.progress);
     }
@@ -3754,13 +3791,55 @@ function showResumeToast(pct, headingText, alreadyMoved) {
   }
 
   toast.classList.remove('hidden');
-  setTimeout(() => {
-    hideResumeToast();
-  }, 6000);
+  clearTimeout(state.resumeToastTimer);   // 앞선 알림의 닫기 예약이 새 알림을 닫지 않게
+  state.resumeToastTimer = setTimeout(hideResumeToast, 6000);
 }
 
 function hideResumeToast() {
   document.getElementById('resume-toast').classList.add('hidden');
+}
+
+async function restartCurrentDoc() {
+  if (!state.currentDoc) return;
+  const res = await apiFetch('/api/progress/restart', { method: 'POST', body: JSON.stringify({ doc_path: state.currentDoc.path }) });
+  if (res.progress) {
+    state.currentDoc.progress = res.progress;
+    syncLocalDocProgress(state.currentDoc.path, res.progress);
+    state.suppressScrollSave = true;
+    scrollToPercentage(0);
+    state.currentScrollPercent = 0;
+    setTimeout(() => { state.suppressScrollSave = false; }, 300);
+    updateCompleteButtonUI(false);
+    showXpToast(`↻ ${docCompletedCount(res.progress) + 1}번째 읽기를 시작해요`);
+  }
+}
+
+/* 다른 기기에서 더 최근에 읽은 위치가 있으면 알려 주기 (앱을 다시 열었을 때·문서를 열었을 때) */
+async function checkRemoteProgress() {
+  if (!state.currentDoc) return;
+  const path = state.currentDoc.path;
+  try {
+    const res = await apiFetch('/api/progress?doc_path=' + encodeURIComponent(path));
+    const sp = res && res.progress;
+    if (!sp || !state.currentDoc || state.currentDoc.path !== path) return;
+    const local = state.currentDoc.progress || {};
+    const newer = sp.last_read_at && (!local.last_read_at || sp.last_read_at > local.last_read_at);
+    if (!newer) return;
+    state.currentDoc.progress = { ...local, ...sp };
+    syncLocalDocProgress(path, sp);
+    updateCompleteButtonUI(Boolean(sp.is_completed));
+    const remotePct = Number(sp.scroll_percent || 0);
+    if (Math.abs(remotePct - (state.currentScrollPercent || 0)) > 3) {
+      const toast = document.getElementById('resume-toast');
+      document.getElementById('resume-toast-text').textContent = `📱 다른 기기에서 ${Math.round(remotePct)}%까지 읽었어요${sp.heading_text ? ' (' + sp.heading_text.slice(0, 22) + ')' : ''}.`;
+      const btn = document.getElementById('btn-resume-jump');
+      btn.textContent = '그 위치로';
+      btn.onclick = () => { scrollToPercentage(remotePct); hideResumeToast(); };
+      toast.classList.remove('hidden');
+      clearTimeout(state.resumeToastTimer);
+      state.resumeToastTimer = setTimeout(hideResumeToast, 10000);
+    }
+  } catch (e) { /* 조회 실패는 무시 */ }
 }
 
 async function toggleCurrentDocCompleted() {
@@ -3786,23 +3865,27 @@ async function toggleCurrentDocCompleted() {
 function updateCompleteButtonUI(isCompleted) {
   const topBtn = document.getElementById('btn-doc-complete');
   const botBtn = document.getElementById('btn-bottom-complete');
+  const cnt = state.currentDoc ? docCompletedCount(state.currentDoc.progress || {}) : 0;
+  const restartBtn = document.getElementById('btn-doc-restart');
+  if (restartBtn) restartBtn.classList.toggle('hidden', !isCompleted);
+  updateScrollIndicators(state.currentScrollPercent || 0);
   if (isCompleted) {
-    topBtn.textContent = '✓ 완독 완료';
+    topBtn.textContent = cnt > 1 ? `✓ ${cnt}회 완독` : '✓ 완독 완료';
     topBtn.style.background = 'rgba(16, 185, 129, 0.15)';
     topBtn.style.color = '#059669';
     topBtn.style.borderColor = '#10b981';
 
-    botBtn.textContent = '✓ 완독 완료됨 (클릭 시 해제)';
+    botBtn.textContent = `✓ ${cnt > 1 ? cnt + '회 ' : ''}완독 완료됨 (클릭 시 이번 회차 해제)`;
     botBtn.style.background = 'rgba(16, 185, 129, 0.15)';
     botBtn.style.color = '#059669';
     botBtn.style.borderColor = '#10b981';
   } else {
-    topBtn.textContent = '○ 완독 표시';
+    topBtn.textContent = cnt > 0 ? `○ 완독 표시 (지금까지 ${cnt}회)` : '○ 완독 표시';
     topBtn.style.background = 'var(--bg-primary)';
     topBtn.style.color = 'var(--text-primary)';
     topBtn.style.borderColor = 'var(--border-color)';
 
-    botBtn.textContent = '✓ 이 문서 완독 체크하기 (+50 XP)';
+    botBtn.textContent = cnt > 0 ? `✓ ${cnt + 1}번째 완독 체크하기 (+50 XP)` : '✓ 이 문서 완독 체크하기 (+50 XP)';
     botBtn.style.background = 'transparent';
     botBtn.style.color = 'var(--accent-color)';
     botBtn.style.borderColor = 'var(--accent-color)';
@@ -4440,6 +4523,17 @@ function setupMobileAndTouchUX() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       flushPendingProgress();
+      state.hiddenAt = Date.now();
+    } else if (document.visibilityState === 'visible') {
+      // 3분 이상 다른 앱·기기를 쓰다 돌아오면: 서재 목록(진도·완독 표시)을 조용히 새로 받고, 열린 문서 위치도 확인
+      const away = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
+      state.hiddenAt = 0;
+      const after = () => checkRemoteProgress();
+      if (away >= 180000 && state.library) {
+        refreshLibrary(false).then(after).catch(after);
+      } else {
+        after();
+      }
     }
   });
   window.addEventListener('pagehide', () => {
