@@ -2417,6 +2417,12 @@ async function openDocument(docPath, options = {}) {
   }
 
   const doc = enrichDocWithLibraryState(rawDoc);
+  // 기기에 저장된 문서·목록의 진도는 오래됐을 수 있음 → 서버의 최신 진도를 먼저 받아 그 위치로 연다
+  const fresh = await fetchFreshProgress(docPath);
+  if (fresh) {
+    doc.progress = { ...(doc.progress || {}), ...fresh };
+    syncLocalDocProgress(docPath, fresh);
+  }
   state.currentView = 'doc';
   state.currentDoc = doc;
   state.currentFolderPath = doc.folder || doc.top_folder || '';
@@ -2524,7 +2530,6 @@ async function openDocument(docPath, options = {}) {
     .join('');
 
   updateCompleteButtonUI(Boolean(doc.progress && doc.progress.is_completed));
-  setTimeout(checkRemoteProgress, 1500);   // 다른 기기에서 더 최근에 읽었는지 확인
 
   // Render Document Content (Markdown or PDF)
   if (doc.doc_type === 'pdf') {
@@ -3724,8 +3729,16 @@ async function saveCurrentProgress() {
         heading_id: state.currentHeadingId,
         heading_text: state.currentHeadingText,
         add_seconds: elapsedSec,
+        device_id: getDeviceId(),
+        base_rev: state.currentDoc.progress && state.currentDoc.progress.rev != null ? Number(state.currentDoc.progress.rev) : null,
       }),
     });
+    if (res.conflict && res.progress && state.currentDoc && state.currentDoc.path === res.progress.doc_path) {
+      // 그사이 다른 기기가 더 읽었음 → 이 기기의 예전 위치는 버리고 최신 위치로
+      applyRemoteProgress(res.progress, 'conflict');
+      if (res.study_stats) updateStudyGamificationUI(res.study_stats);
+      return;
+    }
     if (res.progress && state.currentDoc) {
       state.currentDoc.progress = res.progress;
       state.lastSavedPct = Number(res.progress.scroll_percent || 0);
@@ -3801,7 +3814,7 @@ function hideResumeToast() {
 
 async function restartCurrentDoc() {
   if (!state.currentDoc) return;
-  const res = await apiFetch('/api/progress/restart', { method: 'POST', body: JSON.stringify({ doc_path: state.currentDoc.path }) });
+  const res = await apiFetch('/api/progress/restart', { method: 'POST', body: JSON.stringify({ doc_path: state.currentDoc.path, device_id: getDeviceId() }) });
   if (res.progress) {
     state.currentDoc.progress = res.progress;
     syncLocalDocProgress(state.currentDoc.path, res.progress);
@@ -3814,32 +3827,72 @@ async function restartCurrentDoc() {
   }
 }
 
-/* 다른 기기에서 더 최근에 읽은 위치가 있으면 알려 주기 (앱을 다시 열었을 때·문서를 열었을 때) */
-async function checkRemoteProgress() {
-  if (!state.currentDoc) return;
-  const path = state.currentDoc.path;
+/* ===== 기기 간 진도 동기화 (2026-11-14) =====
+   서버가 진도의 기준. 저장할 때마다 rev(버전)가 1씩 오르고 마지막으로 저장한 기기(last_device)를 기억.
+   - 문서를 열 때: 서버의 최신 진도를 먼저 받아 그 위치로
+   - 앱으로 돌아올 때·창을 다시 볼 때·열어 둔 동안 30초마다: 다른 기기가 더 읽었으면 그 위치로 자동 이동(되돌리기 버튼)
+   - 오래된 기기가 예전 위치를 저장하려 하면 서버가 거절(conflict) → 그 기기도 최신 위치로 이동 */
+function getDeviceId() {
+  if (state.deviceId) return state.deviceId;
+  let id = '';
+  try { id = localStorage.getItem('obsibook_device_id') || ''; } catch (e) {}
+  if (!id) {
+    id = 'd-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    try { localStorage.setItem('obsibook_device_id', id); } catch (e) {}
+  }
+  state.deviceId = id;
+  return id;
+}
+
+async function fetchFreshProgress(docPath, timeoutMs = 3000) {
   try {
-    const res = await apiFetch('/api/progress?doc_path=' + encodeURIComponent(path));
-    const sp = res && res.progress;
-    if (!sp || !state.currentDoc || state.currentDoc.path !== path) return;
-    const local = state.currentDoc.progress || {};
-    const newer = sp.last_read_at && (!local.last_read_at || sp.last_read_at > local.last_read_at);
-    if (!newer) return;
-    state.currentDoc.progress = { ...local, ...sp };
-    syncLocalDocProgress(path, sp);
-    updateCompleteButtonUI(Boolean(sp.is_completed));
-    const remotePct = Number(sp.scroll_percent || 0);
-    if (Math.abs(remotePct - (state.currentScrollPercent || 0)) > 3) {
-      const toast = document.getElementById('resume-toast');
-      document.getElementById('resume-toast-text').textContent = `📱 다른 기기에서 ${Math.round(remotePct)}%까지 읽었어요${sp.heading_text ? ' (' + sp.heading_text.slice(0, 22) + ')' : ''}.`;
-      const btn = document.getElementById('btn-resume-jump');
-      btn.textContent = '그 위치로';
-      btn.onclick = () => { scrollToPercentage(remotePct); hideResumeToast(); };
-      toast.classList.remove('hidden');
-      clearTimeout(state.resumeToastTimer);
-      state.resumeToastTimer = setTimeout(hideResumeToast, 10000);
-    }
-  } catch (e) { /* 조회 실패는 무시 */ }
+    const res = await Promise.race([
+      apiFetch('/api/progress?doc_path=' + encodeURIComponent(docPath)),
+      new Promise((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    return res && res.progress ? res.progress : null;
+  } catch (e) {
+    return null;   // 오프라인 등 — 기기에 저장된 값으로
+  }
+}
+
+function applyRemoteProgress(sp, reason) {
+  if (!state.currentDoc || !sp) return;
+  const local = state.currentDoc.progress || {};
+  const beforePct = Number(state.currentScrollPercent || 0);
+  state.currentDoc.progress = { ...local, ...sp };
+  syncLocalDocProgress(state.currentDoc.path, sp);
+  updateCompleteButtonUI(Boolean(sp.is_completed));
+  const remotePct = Number(sp.scroll_percent || 0);
+  state.lastSavedPct = remotePct;   // 이동 자체로 다시 저장하지 않게
+  state.userInteracted = false;      // 자동 이동 뒤 사진 로딩 등으로 화면이 흔들려도 저장하지 않게(사람이 다시 움직이면 저장)
+  if (Math.abs(remotePct - beforePct) <= 1) return;
+  clearTimeout(state.saveTimer);
+  state.suppressScrollSave = true;
+  scrollToPercentage(remotePct);
+  state.currentScrollPercent = remotePct;
+  setTimeout(() => { state.suppressScrollSave = false; }, 400);
+  const toast = document.getElementById('resume-toast');
+  document.getElementById('resume-toast-text').textContent =
+    `📱 다른 기기에서 읽은 곳(${Math.round(remotePct)}%${sp.heading_text ? ' · ' + sp.heading_text.slice(0, 20) : ''})으로 이동했어요.`;
+  const btn = document.getElementById('btn-resume-jump');
+  btn.textContent = '원래 위치로';
+  btn.onclick = () => { state.userInteracted = true; scrollToPercentage(beforePct); hideResumeToast(); };
+  toast.classList.remove('hidden');
+  clearTimeout(state.resumeToastTimer);
+  state.resumeToastTimer = setTimeout(hideResumeToast, 10000);
+}
+
+/* 다른 기기에서 더 최근에 읽었으면 그 위치로 (앱 복귀·창 포커스·30초마다) */
+async function checkRemoteProgress() {
+  if (!state.currentDoc || state.currentView !== 'doc' || document.visibilityState === 'hidden') return;
+  const path = state.currentDoc.path;
+  const sp = await fetchFreshProgress(path, 4000);
+  if (!sp || !state.currentDoc || state.currentDoc.path !== path) return;
+  const local = state.currentDoc.progress || {};
+  const newer = Number(sp.rev || 0) > Number(local.rev || 0) && (sp.last_device || '') !== getDeviceId();
+  if (newer) applyRemoteProgress(sp, 'remote');
+  else if (Number(sp.rev || 0) > Number(local.rev || 0)) state.currentDoc.progress = { ...local, rev: sp.rev };
 }
 
 async function toggleCurrentDocCompleted() {
@@ -3850,6 +3903,7 @@ async function toggleCurrentDocCompleted() {
       doc_path: state.currentDoc.path,
       title: state.currentDoc.title,
       folder: state.currentDoc.folder || state.currentDoc.top_folder,
+      device_id: getDeviceId(),
     }),
   });
   if (res.progress) {
@@ -4539,6 +4593,14 @@ function setupMobileAndTouchUX() {
   window.addEventListener('pagehide', () => {
     flushPendingProgress();
   });
+  // PC에서 다른 창을 보다 돌아올 때(탭 전환이 아니라 창 전환은 visibilitychange가 안 생김)
+  window.addEventListener('focus', () => {
+    if (Date.now() - (state.lastRemoteCheck || 0) > 3000) { state.lastRemoteCheck = Date.now(); checkRemoteProgress(); }
+  });
+  // 문서를 열어 둔 채 다른 기기로 읽는 경우 대비: 30초마다 가볍게 확인(진도 1건만 조회)
+  setInterval(() => {
+    if (state.currentView === 'doc' && document.visibilityState === 'visible') checkRemoteProgress();
+  }, 30000);
 
   let touchStartX = 0;
   let touchStartY = 0;

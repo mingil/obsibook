@@ -142,12 +142,15 @@ class ProgressPayload(BaseModel):
     heading_text: str = ""
     is_completed: Optional[bool] = None
     add_seconds: int = 0
+    device_id: str = ""
+    base_rev: Optional[int] = None
 
 
 class ToggleCompletePayload(BaseModel):
     doc_path: str
     title: str = ""
     folder: str = ""
+    device_id: str = ""
 
 
 class BookmarkCreatePayload(BaseModel):
@@ -502,8 +505,11 @@ def save_reading_progress(payload: ProgressPayload, _: bool = Depends(verify_aut
         heading_text=payload.heading_text,
         is_completed=payload.is_completed,
         add_seconds=payload.add_seconds,
+        device_id=payload.device_id,
+        base_rev=payload.base_rev,
     )
-    return {"status": "saved", "progress": saved, "study_stats": db.get_study_stats()}
+    conflict = bool(saved.pop("conflict", False))
+    return {"status": "conflict" if conflict else "saved", "conflict": conflict, "progress": saved, "study_stats": db.get_study_stats()}
 
 
 @app.post("/api/progress/toggle-complete")
@@ -513,19 +519,21 @@ def toggle_doc_complete(payload: ToggleCompletePayload, _: bool = Depends(verify
         doc_path=payload.doc_path,
         title=payload.title,
         folder=payload.folder,
+        device_id=payload.device_id,
     )
     return {"status": "updated", "progress": updated, "study_stats": db.get_study_stats()}
 
 
 class RestartPayload(BaseModel):
     doc_path: str
+    device_id: str = ""
 
 
 @app.post("/api/progress/restart")
 def restart_doc_reading(payload: RestartPayload, _: bool = Depends(verify_auth)):
     """완독한 문서를 처음부터 다시 읽기(완독 횟수는 유지)."""
     db = get_db()
-    return {"status": "restarted", "progress": db.restart_reading(payload.doc_path)}
+    return {"status": "restarted", "progress": db.restart_reading(payload.doc_path, payload.device_id)}
 
 
 @app.get("/api/progress")

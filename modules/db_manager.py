@@ -172,6 +172,11 @@ class DatabaseManager:
                 conn.execute("UPDATE reading_progress SET completed_count = 1 WHERE is_completed = 1")
             if "pass_seconds" not in cols:
                 conn.execute("ALTER TABLE reading_progress ADD COLUMN pass_seconds INTEGER NOT NULL DEFAULT 0")
+            # 2026-11-14: 기기 간 동기화 — rev(저장할 때마다 +1), last_device(마지막으로 저장한 기기)
+            if "rev" not in cols:
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN rev INTEGER NOT NULL DEFAULT 0")
+            if "last_device" not in cols:
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN last_device TEXT NOT NULL DEFAULT ''")
 
     @staticmethod
     def _now() -> str:
@@ -225,7 +230,11 @@ class DatabaseManager:
         heading_text: str = "",
         is_completed: Optional[bool] = None,
         add_seconds: int = 0,
+        device_id: str = "",
+        base_rev: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """base_rev: 이 기기가 알고 있는 마지막 rev. 그 뒤에 다른 기기가 저장했으면 위치는 바꾸지 않고
+        (읽은 시간만 더함) conflict=True 와 최신 진도를 돌려준다 → 기기는 최신 위치로 이동."""
         scroll_percent = max(0.0, min(100.0, round(float(scroll_percent), 1)))
         now = self._now()
         clean_sec = max(0, int(add_seconds))
@@ -237,6 +246,22 @@ class DatabaseManager:
 
             newly_completed = False
             counted = False
+            if (
+                existing
+                and base_rev is not None
+                and int(existing["rev"] or 0) > int(base_rev)
+                and (existing["last_device"] or "") not in ("", device_id)
+            ):
+                conn.execute(
+                    "UPDATE reading_progress SET total_read_seconds = total_read_seconds + ?, pass_seconds = pass_seconds + ? WHERE doc_path = ?",
+                    (clean_sec, clean_sec, doc_path),
+                )
+                if clean_sec > 0:
+                    self._record_daily_activity(conn, add_seconds=clean_sec, add_xp=2)
+                row = conn.execute("SELECT * FROM reading_progress WHERE doc_path = ?", (doc_path,)).fetchone()
+                out = dict(row)
+                out["conflict"] = True
+                return out
             if existing:
                 pass_sec = int(existing["pass_seconds"] or 0) + clean_sec
                 count = int(existing["completed_count"] or 0)
@@ -256,6 +281,14 @@ class DatabaseManager:
                         count += 1
                         counted = True
                     newly_completed = counted
+                # 같은 기기가 같은 위치를 다시 저장(읽은 시간만 늘어남)하면 버전을 올리지 않음
+                # → 다른 기기가 그 사이 정상적으로 이어 읽은 저장이 "뒤처졌다"고 거절되지 않게
+                same_spot = (
+                    (existing["last_device"] or "") == device_id
+                    and abs(float(existing["scroll_percent"]) - scroll_percent) < 0.5
+                    and completed_val == existing["is_completed"]
+                )
+                bump = 0 if same_spot else 1
                 new_title = title or existing["title"]
                 new_folder = folder or existing["folder"]
                 total_sec = existing["total_read_seconds"] + clean_sec
@@ -273,7 +306,9 @@ class DatabaseManager:
                         total_read_seconds = ?,
                         completed_count = ?,
                         pass_seconds = ?,
-                        last_read_at = ?
+                        last_read_at = ?,
+                        rev = rev + ?,
+                        last_device = ?
                     WHERE doc_path = ?
                     """,
                     (
@@ -288,6 +323,8 @@ class DatabaseManager:
                         count,
                         pass_sec,
                         now,
+                        bump,
+                        device_id,
                         doc_path,
                     ),
                 )
@@ -304,8 +341,8 @@ class DatabaseManager:
                     INSERT INTO reading_progress (
                         doc_path, title, folder, scroll_percent, scroll_top,
                         heading_id, heading_text, is_completed, read_count,
-                        total_read_seconds, last_read_at, completed_count, pass_seconds
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                        total_read_seconds, last_read_at, completed_count, pass_seconds, rev, last_device
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, ?)
                     """,
                     (
                         doc_path,
@@ -320,6 +357,7 @@ class DatabaseManager:
                         now,
                         completed_val,
                         clean_sec,
+                        device_id,
                     ),
                 )
 
@@ -335,7 +373,7 @@ class DatabaseManager:
             ).fetchone()
             return dict(row)
 
-    def toggle_completed(self, doc_path: str, title: str = "", folder: str = "") -> Dict[str, Any]:
+    def toggle_completed(self, doc_path: str, title: str = "", folder: str = "", device_id: str = "") -> Dict[str, Any]:
         now = self._now()
         with self._get_conn() as conn:
             existing = conn.execute(
@@ -349,10 +387,11 @@ class DatabaseManager:
                 conn.execute(
                     """
                     UPDATE reading_progress
-                    SET is_completed = ?, scroll_percent = ?, completed_count = ?, pass_seconds = 0, last_read_at = ?
+                    SET is_completed = ?, scroll_percent = ?, completed_count = ?, pass_seconds = 0, last_read_at = ?,
+                        rev = rev + 1, last_device = ?
                     WHERE doc_path = ?
                     """,
-                    (new_state, new_pct, count, now, doc_path),
+                    (new_state, new_pct, count, now, device_id, doc_path),
                 )
                 if new_state == 1:
                     self._record_daily_activity(conn, add_xp=50)
@@ -362,10 +401,10 @@ class DatabaseManager:
                     INSERT INTO reading_progress (
                         doc_path, title, folder, scroll_percent, scroll_top,
                         heading_id, heading_text, is_completed, read_count,
-                        total_read_seconds, last_read_at, completed_count, pass_seconds
-                    ) VALUES (?, ?, ?, 100.0, 0.0, '', '', 1, 1, 0, ?, 1, 0)
+                        total_read_seconds, last_read_at, completed_count, pass_seconds, rev, last_device
+                    ) VALUES (?, ?, ?, 100.0, 0.0, '', '', 1, 1, 0, ?, 1, 0, 1, ?)
                     """,
-                    (doc_path, title or Path(doc_path).stem, folder, now),
+                    (doc_path, title or Path(doc_path).stem, folder, now, device_id),
                 )
                 self._record_daily_activity(conn, add_xp=50)
             row = conn.execute(
@@ -373,17 +412,17 @@ class DatabaseManager:
             ).fetchone()
             return dict(row)
 
-    def restart_reading(self, doc_path: str) -> Optional[Dict[str, Any]]:
+    def restart_reading(self, doc_path: str, device_id: str = "") -> Optional[Dict[str, Any]]:
         """완독한 문서를 처음부터 다시 읽기: 위치 0, 새 회차 시작(완독 횟수는 유지)."""
         with self._get_conn() as conn:
             conn.execute(
                 """
                 UPDATE reading_progress
                 SET is_completed = 0, scroll_percent = 0.0, scroll_top = 0.0, heading_id = '', heading_text = '',
-                    pass_seconds = 0, last_read_at = ?
+                    pass_seconds = 0, last_read_at = ?, rev = rev + 1, last_device = ?
                 WHERE doc_path = ?
                 """,
-                (self._now(), doc_path),
+                (self._now(), device_id, doc_path),
             )
             row = conn.execute("SELECT * FROM reading_progress WHERE doc_path = ?", (doc_path,)).fetchone()
             return dict(row) if row else None
