@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -177,6 +178,9 @@ class DatabaseManager:
                 conn.execute("ALTER TABLE reading_progress ADD COLUMN rev INTEGER NOT NULL DEFAULT 0")
             if "last_device" not in cols:
                 conn.execute("ALTER TABLE reading_progress ADD COLUMN last_device TEXT NOT NULL DEFAULT ''")
+            # 2026-11-14: read_ts — 그 위치를 실제로 읽은 시각(서버 시계 기준 ms). 인터넷이 끊겨 늦게 도착한 저장의 선후 판단용
+            if "read_ts" not in cols:
+                conn.execute("ALTER TABLE reading_progress ADD COLUMN read_ts INTEGER NOT NULL DEFAULT 0")
 
     @staticmethod
     def _now() -> str:
@@ -232,12 +236,17 @@ class DatabaseManager:
         add_seconds: int = 0,
         device_id: str = "",
         base_rev: Optional[int] = None,
+        read_ts: Optional[int] = None,
+        queued: bool = False,
     ) -> Dict[str, Any]:
         """base_rev: 이 기기가 알고 있는 마지막 rev. 그 뒤에 다른 기기가 저장했으면 위치는 바꾸지 않고
         (읽은 시간만 더함) conflict=True 와 최신 진도를 돌려준다 → 기기는 최신 위치로 이동."""
         scroll_percent = max(0.0, min(100.0, round(float(scroll_percent), 1)))
         now = self._now()
         clean_sec = max(0, int(add_seconds))
+        server_ms = int(time.time() * 1000)
+        # 기기가 보낸 "읽은 시각"(서버 시계로 보정된 값). 없거나 미래면 지금
+        ts = min(int(read_ts), server_ms) if read_ts else server_ms
 
         with self._get_conn() as conn:
             existing = conn.execute(
@@ -246,12 +255,25 @@ class DatabaseManager:
 
             newly_completed = False
             counted = False
-            if (
+            ex_ts = int(existing["read_ts"] or 0) if existing else 0
+            if existing and read_ts and (existing["last_device"] or "") == device_id and ex_ts == ts:
+                # 같은 저장이 두 번 도착(앱이 닫히며 보낸 것 + 다시 보내기) → 한 번만 반영
+                return dict(existing)
+            if read_ts and ex_ts and ts < ex_ts:
+                # 이미 더 나중에 읽은 기록이 있음 → 늦게 도착한 예전 저장은 위치를 바꾸지 않음
+                stale = True
+            elif (
                 existing
                 and base_rev is not None
                 and int(existing["rev"] or 0) > int(base_rev)
                 and (existing["last_device"] or "") not in ("", device_id)
             ):
+                # 이 기기가 모르는 사이 다른 기기가 저장함. 인터넷이 끊겨 보관했다 다시 보낸 저장(queued)이
+                # 실제로 더 나중에 읽은 것이면 그것이 최신. 접속 중인 기기의 저장이면 먼저 최신 위치를 따라가야 함
+                stale = not (queued and read_ts and ts > ex_ts)
+            else:
+                stale = False
+            if stale:
                 conn.execute(
                     "UPDATE reading_progress SET total_read_seconds = total_read_seconds + ?, pass_seconds = pass_seconds + ? WHERE doc_path = ?",
                     (clean_sec, clean_sec, doc_path),
@@ -308,7 +330,8 @@ class DatabaseManager:
                         pass_seconds = ?,
                         last_read_at = ?,
                         rev = rev + ?,
-                        last_device = ?
+                        last_device = ?,
+                        read_ts = ?
                     WHERE doc_path = ?
                     """,
                     (
@@ -325,6 +348,7 @@ class DatabaseManager:
                         now,
                         bump,
                         device_id,
+                        ts,
                         doc_path,
                     ),
                 )
@@ -341,8 +365,8 @@ class DatabaseManager:
                     INSERT INTO reading_progress (
                         doc_path, title, folder, scroll_percent, scroll_top,
                         heading_id, heading_text, is_completed, read_count,
-                        total_read_seconds, last_read_at, completed_count, pass_seconds, rev, last_device
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, ?)
+                        total_read_seconds, last_read_at, completed_count, pass_seconds, rev, last_device, read_ts
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, ?, ?)
                     """,
                     (
                         doc_path,
@@ -358,6 +382,7 @@ class DatabaseManager:
                         completed_val,
                         clean_sec,
                         device_id,
+                        ts,
                     ),
                 )
 
@@ -388,7 +413,7 @@ class DatabaseManager:
                     """
                     UPDATE reading_progress
                     SET is_completed = ?, scroll_percent = ?, completed_count = ?, pass_seconds = 0, last_read_at = ?,
-                        rev = rev + 1, last_device = ?
+                        rev = rev + 1, last_device = ?, read_ts = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
                     WHERE doc_path = ?
                     """,
                     (new_state, new_pct, count, now, device_id, doc_path),
@@ -419,7 +444,7 @@ class DatabaseManager:
                 """
                 UPDATE reading_progress
                 SET is_completed = 0, scroll_percent = 0.0, scroll_top = 0.0, heading_id = '', heading_text = '',
-                    pass_seconds = 0, last_read_at = ?, rev = rev + 1, last_device = ?
+                    pass_seconds = 0, last_read_at = ?, rev = rev + 1, last_device = ?, read_ts = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
                 WHERE doc_path = ?
                 """,
                 (self._now(), device_id, doc_path),

@@ -144,6 +144,8 @@ class ProgressPayload(BaseModel):
     add_seconds: int = 0
     device_id: str = ""
     base_rev: Optional[int] = None
+    read_ts: Optional[int] = None   # 실제로 읽은 시각(서버 시계로 보정한 ms)
+    queued: bool = False            # 인터넷이 끊겨 기기에 보관했다가 다시 보낸 저장
 
 
 class ToggleCompletePayload(BaseModel):
@@ -507,9 +509,12 @@ def save_reading_progress(payload: ProgressPayload, _: bool = Depends(verify_aut
         add_seconds=payload.add_seconds,
         device_id=payload.device_id,
         base_rev=payload.base_rev,
+        read_ts=payload.read_ts,
+        queued=payload.queued,
     )
     conflict = bool(saved.pop("conflict", False))
-    return {"status": "conflict" if conflict else "saved", "conflict": conflict, "progress": saved, "study_stats": db.get_study_stats()}
+    return {"status": "conflict" if conflict else "saved", "conflict": conflict, "progress": saved,
+            "study_stats": db.get_study_stats(), "server_ms": int(time.time() * 1000)}
 
 
 @app.post("/api/progress/toggle-complete")
@@ -539,7 +544,7 @@ def restart_doc_reading(payload: RestartPayload, _: bool = Depends(verify_auth))
 @app.get("/api/progress")
 def get_doc_progress(doc_path: str, _: bool = Depends(verify_auth)):
     """다른 기기에서 읽은 최신 위치 확인용(가벼운 조회)."""
-    return {"progress": get_db().get_progress(doc_path)}
+    return {"progress": get_db().get_progress(doc_path), "server_ms": int(time.time() * 1000)}
 
 
 # =====================================================================
