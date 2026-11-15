@@ -1091,7 +1091,8 @@ body.zen-mode #doc-path-bar,
 body.zen-mode #doc-study-bar,
 body.zen-mode .mobile-backdrop { display: none !important; }
 body.zen-mode #doc-header-card { background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin-bottom: 1.5rem !important; }
-body.zen-mode #doc-header-card > :not(#doc-main-title) { display: none !important; }
+/* body 기준 ":not()" 규칙은 브라우저가 문서 전체 스타일을 다시 계산하게 만듦(큰 문서에서 0.25초+) → 카드 자체의 class로 */
+#doc-header-card.zen-card > :not(#doc-main-title) { display: none !important; }
 body.zen-mode .reader-container { padding-top: 64px; }
 .zen-exit-btn {
   display: none;
@@ -1175,3 +1176,15 @@ body.drawer-open .reader-zoom-control { display: none !important; }
 @media (max-width: 1180px) {
   .app-header button > span.hidden { display: none !important; }
 }
+
+/* 큰 문서 속도(2026-11-15): 화면 밖 블록은 그리지 않음. 높이 어림값은 app.js buildReadingIndex가 블록마다 지정
+   (한 번 그려진 블록은 브라우저가 실제 높이를 기억 — "auto") */
+#ebook-article.cv-on > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+
+/* "읽던 위치" 알림: 화면 가운데 기준 배치라 폭이 화면 절반으로 줄어 320px 폰에서 글자·버튼이 세로로 찌그러졌음(2026-11-15) */
+#resume-toast { width: max-content; max-width: calc(100vw - 24px); }
+#resume-toast > button { white-space: nowrap; flex-shrink: 0; }
+@media (max-width: 480px) { #resume-toast { border-radius: 16px; } }

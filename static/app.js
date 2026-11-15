@@ -1346,6 +1346,43 @@ function prefetchDoc(docPath) {
   state.prefetchInFlight.set(docPath, p);
 }
 
+/* 미리 준비(2026-11-15): 접속 후 한가할 때 최근에 읽은 문서·열어 둔 탭의 큰 문서를 미리 받아 변환해 둠
+   → 처음 여는 큰 문서도 바로 열림. 사람이 조작 중이면(최근 3초) 미루고, 한 번에 한 문서씩 */
+function scheduleDocWarmup() {
+  if (state.warmupStarted) return;
+  if (!state.library || !(state.library.documents || []).length) { setTimeout(scheduleDocWarmup, 3000); return; }
+  state.warmupStarted = true;
+  const recent = (state.library.documents || [])
+    .filter((d) => d.last_read_at && d.doc_type !== 'pdf')
+    .sort((a, b) => String(b.last_read_at).localeCompare(String(a.last_read_at)))
+    .slice(0, 8)
+    .map((d) => d.path);
+  const tabs = (state.openTabs || []).map((t) => t.path).filter(Boolean);
+  const paths = Array.from(new Set([...tabs, ...recent])).slice(0, 10);
+  let i = 0;
+  const step = async () => {
+    if (i >= paths.length) return;
+    if (document.visibilityState !== 'visible' || performance.now() - (state.lastUserInputAt || 0) < 3000) {
+      setTimeout(step, 2000);
+      return;
+    }
+    const path = paths[i++];
+    try {
+      let doc = state.docCache.get(path);
+      if (!doc) {
+        prefetchDoc(path);
+        doc = await (state.prefetchInFlight.get(path) || Promise.resolve(state.docCache.get(path)));
+      }
+      // 큰 문서만 미리 변환(작은 문서는 여는 순간 변환해도 빠름). 변환 직전에 다시 한가한지 확인
+      if (doc && doc.content && doc.content.length > 50000 && performance.now() - (state.lastUserInputAt || 0) >= 3000) {
+        cachedMarkdownHtml(doc, doc.content);
+      }
+    } catch (e) {}
+    setTimeout(step, 800);
+  };
+  setTimeout(step, 1500);
+}
+
 /* 여러 번 완독: 완독 횟수 + 이번 회차 진도 (2026-11-13) */
 function docCompletedCount(d) {
   if (!d) return 0;
@@ -2379,6 +2416,16 @@ function renderSidebar() {
 async function openDocument(docPath, options = {}) {
   stopTTS();
   flushPendingProgress();
+  // 최신 진도 확인은 문서 내용을 받는 동안 함께(순서대로 기다리면 그만큼 늦게 열림)
+  // 이 기기에 못 보낸 진도가 있으면 먼저 보낸 뒤(최대 3초), 서버의 최신 진도를 받음
+  const progressPromise = (async () => {
+    if (Object.keys(loadPendingProgress()).length) {
+      await Promise.race([flushAllPendingProgress(), new Promise((r) => setTimeout(r, 3000))]);
+    }
+    const pending = loadPendingProgress()[docPath];
+    if (pending) return { pending };
+    return { fresh: await fetchFreshProgress(docPath) };
+  })();
 
   // Switch views immediately so user never wonders if a click registered!
   document.getElementById('dashboard-view').classList.add('hidden');
@@ -2419,13 +2466,10 @@ async function openDocument(docPath, options = {}) {
   }
 
   const doc = enrichDocWithLibraryState(rawDoc);
-  // 이 기기에 못 보낸 진도가 있으면 먼저 보낸 뒤(최대 3초),
-  // 기기에 저장된 문서·목록의 진도는 오래됐을 수 있음 → 서버의 최신 진도를 받아 그 위치로 연다
-  if (Object.keys(loadPendingProgress()).length) {
-    await Promise.race([flushAllPendingProgress(), new Promise((r) => setTimeout(r, 3000))]);
-  }
-  const stillPending = loadPendingProgress()[docPath];
-  const fresh = stillPending ? null : await fetchFreshProgress(docPath);
+  // 기기에 저장된 문서·목록의 진도는 오래됐을 수 있음 → 서버의 최신 진도(위에서 함께 받기 시작)로 연다
+  const progressResult = await progressPromise;
+  const stillPending = progressResult.pending || null;
+  const fresh = progressResult.fresh || null;
   if (stillPending) {
     // 아직 서버에 못 보냄(인터넷 끊김) → 이 기기에서 마지막으로 읽은 곳으로
     doc.progress = {
@@ -2615,7 +2659,7 @@ async function openDocument(docPath, options = {}) {
     }, 50);
   } else if (savedPct > 1.5 && savedPct < 98 && (state.settings.autoRestoreScroll || options.restoreScroll)) {
     setTimeout(() => {
-      scrollToPercentage(savedPct);
+      scrollToSavedPosition(savedPct, doc.progress && doc.progress.heading_id);
       showResumeToast(savedPct, doc.progress.heading_text, true);
       state.suppressScrollSave = false;
     }, 60);
@@ -2648,7 +2692,10 @@ function renderMarkdownArticle(doc) {
   const rawContent = doc.content || '';
 
   prewarmDocImages(rawContent);
-  article.innerHTML = renderObsidianMarkdownToHtml(rawContent);
+  const mdHtml = cachedMarkdownHtml(doc, rawContent);
+  // 화면 밖 블록 그리기 생략을 내용을 넣기 "전에" 켬(넣은 뒤 켜면 2만 개 요소 스타일을 한 번 다 계산함)
+  article.classList.toggle('cv-on', rawContent.length > 20000);
+  article.innerHTML = mdHtml;
   enhanceArticleImages(article);
 
   // 1. Assign Heading IDs, Sync TOC Slugs, Bookmark Pin Button, and Section Collapse Button
@@ -2853,6 +2900,9 @@ function renderMarkdownArticle(doc) {
 
   // 8. Setup Paginated Chapter Mode if enabled
   setupChapterPagination();
+
+  // 9. 읽은 위치 계산용 색인 + 화면 밖 블록 그리기 생략(큰 문서 속도)
+  buildReadingIndex(article);
 }
 
 function toggleHeadingFold(headingEl, btnEl) {
@@ -3064,7 +3114,7 @@ async function saveSelectionHighlight(color = 'yellow', openMemoModal = false) {
       folder: state.currentDoc.folder || state.currentDoc.top_folder,
       note: '',
       color,
-      heading_id: state.currentHeadingId,
+      heading_id: headingIdAtPercent(state.currentScrollPercent) || state.currentHeadingId,
       heading_text: state.currentHeadingText,
       scroll_percent: state.currentScrollPercent,
       is_flashcard: true,
@@ -3543,7 +3593,7 @@ function renderInDocHighlightsAndBookmarks(hls, bms) {
         (h) => `
         <div class="p-2.5 rounded-xl border text-xs space-y-1 cursor-pointer"
              style="background: var(--bg-surface); border-color: var(--border-color);"
-             onclick="scrollToPercentage(${h.scroll_percent || 0})">
+             onclick="scrollToSavedPosition(${h.scroll_percent || 0}, '${escapeJsAttr(h.heading_id || '')}')">
           <div class="flex items-center justify-between">
             <span class="font-bold text-[11px]" style="color: var(--accent-color);">📍 ${Math.round(h.scroll_percent || 0)}% 위치</span>
             <button type="button" onclick="event.stopPropagation(); deleteHighlightById(${h.id})" class="opacity-50 hover:opacity-100">✕</button>
@@ -3565,7 +3615,7 @@ function renderInDocHighlightsAndBookmarks(hls, bms) {
         (b) => `
         <div class="p-2 rounded-lg border text-xs cursor-pointer hover:opacity-90 flex items-start justify-between gap-1"
              style="background: var(--bg-surface); border-color: var(--border-color);"
-             onclick="scrollToPercentage(${b.scroll_percent})">
+             onclick="scrollToSavedPosition(${b.scroll_percent || 0}, '${escapeJsAttr(b.heading_id || '')}')">
           <div class="min-w-0">
             <div class="font-bold" style="color: var(--accent-color);">🔖 ${Math.round(b.scroll_percent)}% ${escapeHtml(b.heading_text || '')}</div>
             ${b.memo ? `<div class="text-[11px] opacity-80 truncate">💬 ${escapeHtml(b.memo)}</div>` : ''}
@@ -3648,7 +3698,7 @@ function setupScrollListener() {
   const viewport = document.getElementById('reader-viewport');
   // 사람이 직접 조작했는지 표시(문서를 연 뒤 자동 이동·화면 높이 변화와 구분)
   ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) =>
-    document.addEventListener(ev, () => { state.userInteracted = true; }, { passive: true, capture: true })
+    document.addEventListener(ev, () => { state.userInteracted = true; state.lastUserInputAt = performance.now(); }, { passive: true, capture: true })
   );
   viewport.addEventListener(
     'scroll',
@@ -3662,8 +3712,7 @@ function setupScrollListener() {
         if (state.currentView !== 'doc' || !state.currentDoc) return;
 
         const scrollTop = viewport.scrollTop;
-        const maxScroll = Math.max(1, viewport.scrollHeight - viewport.clientHeight);
-        const pct = Math.max(0, Math.min(100, (scrollTop / maxScroll) * 100));
+        const pct = computeReadingPercent();
 
         state.currentScrollTop = scrollTop;
         state.currentScrollPercent = pct;
@@ -3841,7 +3890,7 @@ async function saveCurrentProgress(opts = {}) {
     folder: doc.folder || doc.top_folder,
     scroll_percent: state.currentScrollPercent,
     scroll_top: state.currentScrollTop,
-    heading_id: state.currentHeadingId,
+    heading_id: headingIdAtPercent(state.currentScrollPercent) || state.currentHeadingId,
     heading_text: state.currentHeadingText,
     add_seconds: elapsedSec + (prev ? Number(prev.add_seconds || 0) : 0),
     device_id: getDeviceId(),
@@ -3871,11 +3920,213 @@ function flushPendingProgress(keepalive = false) {
   }
 }
 
+/* ===== 큰 문서 속도 + 읽은 위치 = 글자 분량 기준 % (2026-11-15) =====
+   - 화면 밖 블록은 그리지 않음(content-visibility) → 1MB 문서도 열기·집중 모드 전환이 빠름
+   - 그 대신 화면 밖 높이는 어림값이라 "픽셀 %"는 기기·스크롤 상태마다 달라짐 →
+     위치를 "문서 글자 분량 중 어디까지"로 계산(사진은 글자 200자로 침). 화면 폭이 다른 기기에서도 같은 %가 같은 내용
+   - 읽는 줄: 맨 위에서는 화면 맨 위, 맨 아래로 갈수록 화면 아래쪽으로 이동 → 0%~100%가 끊김 없이 이어짐 */
+function buildReadingIndex(article) {
+  const blocks = Array.from(article.children);
+  const n = blocks.length;
+  const w = new Array(n);
+  const cum = new Array(n);
+  const headingOf = new Array(n);
+  const cs = getComputedStyle(article);
+  const fs = parseFloat(cs.fontSize) || 18;
+  const lh = parseFloat(cs.lineHeight) || fs * 1.8;
+  const widthPx = Math.max(280, Math.min(window.innerWidth - 32, 900));
+  const cpl = Math.max(12, Math.floor(widthPx / (fs * 0.98)));   // 한 줄 글자 수(한글 기준 어림)
+  let total = 0;
+  let lastHeading = '';
+  const useCv = article.classList.contains('cv-on') || n > 40;
+  for (let i = 0; i < n; i++) {
+    const el = blocks[i];
+    const tag = el.tagName;
+    const chars = (el.textContent || '').length;
+    const imgs = tag === 'IMG' ? 1 : el.getElementsByTagName('img').length;
+    if (/^H[1-6]$/.test(tag) && el.id) lastHeading = el.id;
+    headingOf[i] = lastHeading;
+    w[i] = Math.max(1, chars) + imgs * 200;
+    cum[i] = total;
+    total += w[i];
+    if (useCv) {
+      let est;
+      if (/^H[1-6]$/.test(tag)) est = lh * 1.4 + fs * 2.4;
+      else if (el.classList.contains('table-scroll-wrapper') || tag === 'TABLE') est = el.getElementsByTagName('tr').length * lh * 1.5 + 28;
+      else est = Math.ceil(Math.max(1, chars) / cpl) * lh + fs * 1.2;
+      est += imgs * 340;
+      el.style.containIntrinsicSize = `auto ${Math.round(est)}px`;
+    }
+  }
+  article.classList.toggle('cv-on', useCv);
+  state.readIdx = { article, blocks, w, cum, total, headingOf };
+  state.placedPos = null;
+  state.posHeadingId = '';
+}
+
+function readIdxUsable() {
+  const idx = state.readIdx;
+  return Boolean(idx && idx.total > 0 && idx.article.isConnected && state.settings.viewMode !== 'paginated');
+}
+
+function blockShown(el) {
+  return el.getClientRects().length > 0;   // 접힌 섹션(display:none)은 건너뜀
+}
+
+// 화면 좌표 y 위에 맨 위가 있는 마지막(보이는) 블록
+function findBlockAtY(idx, y) {
+  const b = idx.blocks;
+  let lo = 0;
+  let hi = b.length - 1;
+  let ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    let m = mid;
+    while (m <= hi && !blockShown(b[m])) m++;
+    if (m > hi) { hi = mid - 1; continue; }
+    if (b[m].getBoundingClientRect().top <= y) { ans = m; lo = m + 1; } else { hi = mid - 1; }
+  }
+  if (ans === -1) {
+    for (let i = 0; i < b.length; i++) if (blockShown(b[i])) return i;
+  }
+  return ans;
+}
+
+function computeReadingPercent() {
+  const viewport = document.getElementById('reader-viewport');
+  const scrollTop = viewport.scrollTop;
+  const maxScroll = viewport.scrollHeight - viewport.clientHeight;
+  const pixelPct = Math.max(0, Math.min(100, (scrollTop / Math.max(1, maxScroll)) * 100));
+  if (!readIdxUsable() || maxScroll < 2) return pixelPct;
+  const idx = state.readIdx;
+  // 방금 % 로 이동한 그 자리 그대로면(스크롤·내용 변화 없음) 그 % 를 그대로 — 픽셀 반올림 오차가 저장·동기화를 거치며 쌓이지 않게
+  const pl = state.placedPos;
+  if (pl && pl.idx === idx && Math.abs(scrollTop - pl.top) < 1 && Math.abs(idx.blocks[pl.i].getBoundingClientRect().top - pl.blockTop) < 1) {
+    state.posHeadingId = idx.headingOf[pl.i] || '';
+    return pl.p;
+  }
+  if (scrollTop >= maxScroll - 1) { state.posHeadingId = idx.headingOf[idx.blocks.length - 1] || ''; return 100; }
+  if (scrollTop <= 0) { state.posHeadingId = idx.headingOf[0] || ''; return 0; }
+  const vr = viewport.getBoundingClientRect();
+  const lineY = vr.top + (scrollTop / maxScroll) * viewport.clientHeight;
+  const i = findBlockAtY(idx, lineY);
+  if (i < 0) return pixelPct;
+  const r = idx.blocks[i].getBoundingClientRect();
+  const frac = r.height > 0 ? Math.max(0, Math.min(1, (lineY - r.top) / r.height)) : 0;
+  state.posHeadingId = idx.headingOf[i] || '';
+  return Math.max(0, Math.min(100, ((idx.cum[i] + frac * idx.w[i]) / idx.total) * 100));
+}
+
+function blockIndexAtPercent(idx, p) {
+  const target = (p / 100) * idx.total;
+  let lo = 0;
+  let hi = idx.cum.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (idx.cum[mid] <= target) lo = mid; else hi = mid - 1;
+  }
+  return { i: lo, frac: idx.w[lo] ? Math.max(0, Math.min(1, (target - idx.cum[lo]) / idx.w[lo])) : 0 };
+}
+
+// 읽기 화면은 CSS로 부드러운 스크롤이 켜져 있음 → 위치 복원은 애니메이션 없이 바로(중간 위치에서 계산되지 않게)
+function setViewportScrollTop(viewport, top) {
+  const prev = viewport.style.scrollBehavior;
+  viewport.style.scrollBehavior = 'auto';
+  viewport.scrollTop = top;
+  viewport.style.scrollBehavior = prev;
+}
+
+// 'instant' 값을 모르는 예전 사파리에서도 되게: 잠시 부드러운 스크롤을 끄고 기본 이동
+function scrollIntoViewInstant(el) {
+  const viewport = document.getElementById('reader-viewport');
+  const prev = viewport.style.scrollBehavior;
+  viewport.style.scrollBehavior = 'auto';
+  el.scrollIntoView({ block: 'start' });
+  viewport.style.scrollBehavior = prev;
+}
+
+function placeReadingPercent(p) {
+  const viewport = document.getElementById('reader-viewport');
+  const idx = state.readIdx;
+  state.placedPos = null;
+  if (p >= 100) { setViewportScrollTop(viewport, viewport.scrollHeight); return; }
+  if (p <= 0) { setViewportScrollTop(viewport, 0); return; }
+  let { i, frac } = blockIndexAtPercent(idx, p);
+  while (i < idx.blocks.length - 1 && !blockShown(idx.blocks[i])) { i++; frac = 0; }
+  const vr = viewport.getBoundingClientRect();
+  const r = idx.blocks[i].getBoundingClientRect();
+  const pointY = r.top - vr.top + viewport.scrollTop + frac * r.height;
+  const maxScroll = Math.max(1, viewport.scrollHeight - viewport.clientHeight);
+  const H = viewport.clientHeight;
+  // 읽는 줄 = scrollTop/max*H → pointY - s = s/max*H → s = pointY*max/(max+H)
+  setViewportScrollTop(viewport, Math.max(0, Math.min(maxScroll, (pointY * maxScroll) / (maxScroll + H))));
+  state.placedPos = { p, idx, i, top: viewport.scrollTop, blockTop: idx.blocks[i].getBoundingClientRect().top };
+}
+
 function scrollToPercentage(pct) {
   const viewport = document.getElementById('reader-viewport');
-  const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-  viewport.scrollTop = (maxScroll * pct) / 100;
-  updateScrollIndicators(pct);
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (!readIdxUsable()) {
+    const maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    setViewportScrollTop(viewport, (maxScroll * p) / 100);
+    updateScrollIndicators(p);
+    return;
+  }
+  placeReadingPercent(p);
+  updateScrollIndicators(p);
+  // 화면 밖이던 블록이 실제로 그려지며 높이가 바뀌면 다음 화면에서 몇 번 더 맞춤(사람이 조작하면 멈춤)
+  const t = { p, at: performance.now(), tries: 0 };
+  state.scrollTarget = t;
+  const fix = () => {
+    if (state.scrollTarget !== t || !readIdxUsable()) return;
+    if ((state.lastUserInputAt || 0) > t.at) { state.scrollTarget = null; return; }
+    if (Math.abs(computeReadingPercent() - p) > 0.15 && t.tries < 6) {
+      t.tries++;
+      placeReadingPercent(p);
+      requestAnimationFrame(() => requestAnimationFrame(fix));
+    } else {
+      state.scrollTarget = null;
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(fix));
+}
+
+// 저장하는 % 가 가리키는 소제목(저장 직전에 위치를 옮겼어도 % 와 소제목이 항상 짝이 맞게)
+function headingIdAtPercent(pct) {
+  if (!readIdxUsable()) return state.posHeadingId || '';
+  const { i } = blockIndexAtPercent(state.readIdx, Math.max(0, Math.min(100, Number(pct) || 0)));
+  return state.readIdx.headingOf[i] || '';
+}
+
+// 저장된 위치로: % 로 이동하되, 저장 때의 소제목과 다른 곳을 가리키면(예전 픽셀 % 기록·문서 수정) 그 소제목으로
+function scrollToSavedPosition(pct, headingId) {
+  scrollToPercentage(pct);
+  if (!headingId || !readIdxUsable()) return;
+  const idx = state.readIdx;
+  const { i } = blockIndexAtPercent(idx, Math.max(0, Math.min(100, Number(pct) || 0)));
+  if ((idx.headingOf[i] || '') === headingId) return;
+  const el = document.getElementById(headingId);
+  if (el && idx.article.contains(el) && blockShown(el)) {
+    state.scrollTarget = null;
+    scrollIntoViewInstant(el);
+  }
+}
+
+function cachedMarkdownHtml(doc, raw) {
+  // 한 번 그린 문서의 HTML은 기억(최근 12개) → 다시 열 때 변환 생략. 내용이 바뀌면 다시 변환
+  if (!state.htmlCache) state.htmlCache = new Map();
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) h = Math.imul(h ^ raw.charCodeAt(i), 16777619);
+  const key = `${doc.path}|${raw.length}|${h >>> 0}`;
+  let html = state.htmlCache.get(key);
+  if (html === undefined) {
+    html = renderObsidianMarkdownToHtml(raw);
+  } else {
+    state.htmlCache.delete(key);
+  }
+  state.htmlCache.set(key, html);
+  while (state.htmlCache.size > 12) state.htmlCache.delete(state.htmlCache.keys().next().value);
+  return html;
 }
 
 function scrollToHeading(headingId) {
@@ -3885,7 +4136,19 @@ function scrollToHeading(headingId) {
   }
   const target = document.getElementById(headingId);
   if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 큰 문서는 화면 밖 높이가 어림값이라 부드럽게 움직이는 도중 위치가 바뀜 → 바로 이동 후, 그려지며 밀리면 다시 맞춤
+    state.scrollTarget = null;
+    scrollIntoViewInstant(target);
+    const at = performance.now();
+    let tries = 0;
+    let lastTop = target.getBoundingClientRect().top;
+    const fix = () => {
+      if ((state.lastUserInputAt || 0) > at + 50 || tries++ > 6 || !target.isConnected) return;
+      scrollIntoViewInstant(target);
+      const top = target.getBoundingClientRect().top;
+      if (Math.abs(top - lastTop) > 2) { lastTop = top; requestAnimationFrame(() => requestAnimationFrame(fix)); }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(fix));
   }
 }
 
@@ -3908,7 +4171,7 @@ function showResumeToast(pct, headingText, alreadyMoved) {
     textEl.textContent = `📍 이전에 읽던 위치(${rounded}%${sectionLabel})가 있습니다.`;
     btn.textContent = '이어 읽기';
     btn.onclick = () => {
-      scrollToPercentage(pct);
+      scrollToSavedPosition(pct, state.currentDoc && state.currentDoc.progress && state.currentDoc.progress.heading_id);
       hideResumeToast();
     };
   }
@@ -3982,7 +4245,7 @@ function applyRemoteProgress(sp, reason) {
   if (Math.abs(remotePct - beforePct) <= 1) return;
   clearTimeout(state.saveTimer);
   state.suppressScrollSave = true;
-  scrollToPercentage(remotePct);
+  scrollToSavedPosition(remotePct, sp.heading_id);
   state.currentScrollPercent = remotePct;
   setTimeout(() => { state.suppressScrollSave = false; }, 400);
   const toast = document.getElementById('resume-toast');
@@ -4248,7 +4511,8 @@ function setupChapterPagination() {
     toolbar.classList.add('hidden');
     toolbar.classList.remove('flex');
     modeBtn.innerHTML = '📜 스크롤';
-    Array.from(article.children).forEach((el) => el.classList.remove('chapter-page-hidden'));
+    // 숨겨진 것만 되돌림(모든 블록의 class를 다시 쓰면 큰 문서에서 화면 전체를 다시 계산함)
+    article.querySelectorAll(':scope > .chapter-page-hidden').forEach((el) => el.classList.remove('chapter-page-hidden'));
     return;
   }
 
@@ -4716,6 +4980,8 @@ function setupMobileAndTouchUX() {
   window.addEventListener('online', () => {
     flushAllPendingProgress().then(() => checkRemoteProgress());
   });
+  // 접속 후 한가할 때 최근 문서 미리 준비
+  setTimeout(scheduleDocWarmup, 4000);
   // 처음 열 때(지난번에 못 보내고 앱이 꺼졌을 수 있음)
   setTimeout(() => { if (Object.keys(loadPendingProgress()).length) flushAllPendingProgress(); }, 1500);
   // PC에서 다른 창을 보다 돌아올 때(탭 전환이 아니라 창 전환은 visibilitychange가 안 생김)
@@ -4767,6 +5033,7 @@ function toggleZenMode(force) {
   const on = typeof force === 'boolean' ? force : !document.body.classList.contains('zen-mode');
   if (on && !state.currentDoc) return; // 문서를 볼 때만
   document.body.classList.toggle('zen-mode', on);
+  document.getElementById('doc-header-card')?.classList.toggle('zen-card', on);
   document.getElementById('btn-zen-header')?.setAttribute('aria-pressed', String(on));
   document.getElementById('settings-popover')?.classList.add('hidden');
   const el = document.documentElement;
