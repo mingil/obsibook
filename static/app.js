@@ -2693,6 +2693,8 @@ function renderMarkdownArticle(doc) {
 
   prewarmDocImages(rawContent);
   const mdHtml = cachedMarkdownHtml(doc, rawContent);
+  // 글자 크기·줄 높이는 내용을 넣기 "전에" 읽음(넣은 뒤 읽으면 2만 개 요소 스타일을 한꺼번에 계산함)
+  const metrics = readerMetrics(article);
   // 화면 밖 블록 그리기 생략을 내용을 넣기 "전에" 켬(넣은 뒤 켜면 2만 개 요소 스타일을 한 번 다 계산함)
   article.classList.toggle('cv-on', rawContent.length > 20000);
   article.innerHTML = mdHtml;
@@ -2898,20 +2900,23 @@ function renderMarkdownArticle(doc) {
   // 7. Highlight user-saved highlights inside the rendered DOM
   applySavedHighlightsToDOM(doc.highlights || []);
 
-  // 8. Setup Paginated Chapter Mode if enabled
-  setupChapterPagination();
-
-  // 9. 읽은 위치 계산용 색인 + 화면 밖 블록 그리기 생략(큰 문서 속도)
+  // 8. 큰 문서: 블록을 덩어리(약 100개)로 묶어 화면 밖 덩어리는 그리지 않음 + 읽은 위치 계산용 색인
+  if (article.classList.contains('cv-on')) chunkArticleBlocks(article, metrics);
   buildReadingIndex(article);
+
+  // 9. Setup Paginated Chapter Mode if enabled
+  setupChapterPagination();
 }
 
 function toggleHeadingFold(headingEl, btnEl) {
   const level = Number(headingEl.tagName.slice(1));
-  let next = headingEl.nextElementSibling;
   let isFolding = btnEl.textContent.includes('▾');
   btnEl.textContent = isFolding ? '▸ 펼치기' : '▾ 접기';
-
-  while (next) {
+  // 큰 문서는 블록이 덩어리로 묶여 있어 형제 요소 대신 블록 목록 순서로 따라감
+  const blocks = getArticleBlocks(document.getElementById('ebook-article'));
+  let i = blocks.indexOf(headingEl) + 1;
+  while (i > 0 && i < blocks.length) {
+    const next = blocks[i++];
     if (/^H[1-4]$/.test(next.tagName)) {
       const nextLv = Number(next.tagName.slice(1));
       if (nextLv <= level) break;
@@ -2921,8 +2926,8 @@ function toggleHeadingFold(headingEl, btnEl) {
     } else {
       next.classList.remove('section-folded-hidden');
     }
-    next = next.nextElementSibling;
   }
+  syncChunkVisibility();
 }
 
 /* =========================================================
@@ -3700,24 +3705,22 @@ function setupScrollListener() {
   ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) =>
     document.addEventListener(ev, () => { state.userInteracted = true; state.lastUserInputAt = performance.now(); }, { passive: true, capture: true })
   );
+  // 스크롤 중에는 표시만 해 두고, 위치·소제목 계산은 스크롤이 잠깐 멈췄을 때 한 번(2026-11-15)
+  // 스크롤 도중(초당 60번) 계산하면 브라우저가 배치를 그때마다 다시 해 큰 문서에서 스크롤이 끊겼음
+  // (아주 길게 계속 스크롤해도 1.5초마다는 한 번 갱신)
   viewport.addEventListener(
     'scroll',
     () => {
       if (state.currentView !== 'doc' || !state.currentDoc) return;
-      if (state.scrollRafPending) return;
-      state.scrollRafPending = true;
-
-      requestAnimationFrame(() => {
-        state.scrollRafPending = false;
-        if (state.currentView !== 'doc' || !state.currentDoc) return;
-
-        const scrollTop = viewport.scrollTop;
-        const pct = computeReadingPercent();
-
-        state.currentScrollTop = scrollTop;
-        state.currentScrollPercent = pct;
-        updateScrollIndicators(pct);
-        updateActiveHeadingOnScroll();
+      state.scrollDirty = true;
+      const now = performance.now();
+      if (!state.scrollBurstStart) state.scrollBurstStart = now;
+      clearTimeout(state.scrollTimer);
+      state.scrollTimer = setTimeout(() => {
+        state.scrollTimer = null;
+        state.scrollBurstStart = 0;
+        if (!state.scrollDirty || state.currentView !== 'doc' || !state.currentDoc) return;
+        const pct = refreshScrollState();
 
         if (state.suppressScrollSave) return;
         // 위치가 사실상 그대로면 저장하지 않음 — 문서를 연 직후 "읽던 위치로 이동"만으로 저장해서
@@ -3730,10 +3733,22 @@ function setupScrollListener() {
         state.saveTimer = setTimeout(() => {
           saveCurrentProgress();
         }, 900);
-      });
+      }, now - state.scrollBurstStart > 1500 ? 0 : 180);
     },
     { passive: true }
   );
+}
+
+// 현재 스크롤 위치로 진도 %·진행 막대·현재 소제목을 갱신(저장 직전에도 호출해 최신 값으로)
+function refreshScrollState() {
+  state.scrollDirty = false;
+  const viewport = document.getElementById('reader-viewport');
+  const pct = computeReadingPercent();
+  state.currentScrollTop = viewport.scrollTop;
+  state.currentScrollPercent = pct;
+  updateScrollIndicators(pct);
+  updateActiveHeadingOnScroll();
+  return pct;
 }
 
 function updateScrollIndicators(pct) {
@@ -3748,16 +3763,29 @@ function updateActiveHeadingOnScroll() {
   const headings = state.cachedHeadingEls || [];
   if (headings.length === 0) return;
 
-  let active = headings[0];
-  for (const h of headings) {
-    const rect = h.getBoundingClientRect();
-    if (rect.top <= 140) {
-      active = h;
-    } else {
-      break;
-    }
+  if (readIdxUsable() && state.readIdx.chunks && state.readIdx.chunks.length) {
+    const i = findBlockAtY(state.readIdx, 140);
+    const id = i >= 0 ? state.readIdx.headingOf[i] : '';
+    const el = id ? document.getElementById(id) : null;
+    setActiveHeading(el || headings[0]);
+    return;
   }
+  // 화면 위에서 140px 안쪽까지 올라온 마지막 소제목(이진 탐색 — 소제목 수백 개도 몇 번만 확인, 접힌 소제목은 건너뜀)
+  const limit = 140;
+  let lo = 0;
+  let hi = headings.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    let m = mid;
+    while (m <= hi && headings[m].getClientRects().length === 0) m++;
+    if (m > hi) { hi = mid - 1; continue; }
+    if (headings[m].getBoundingClientRect().top <= limit) { found = m; lo = m + 1; } else { hi = mid - 1; }
+  }
+  setActiveHeading(headings[Math.max(0, found)]);
+}
 
+function setActiveHeading(active) {
   if (active && active.id !== state.currentHeadingId) {
     state.currentHeadingId = active.id;
     state.currentHeadingText = active.childNodes[0] ? active.childNodes[0].textContent.trim() : active.textContent.trim();
@@ -3875,6 +3903,7 @@ async function flushAllPendingProgress() {
 
 async function saveCurrentProgress(opts = {}) {
   if (!state.currentDoc) return;
+  if (state.scrollDirty) refreshScrollState();
   const now = Date.now();
   const elapsedSec = Math.min(120, Math.round((now - state.lastReadTick) / 1000));
   state.lastReadTick = now;
@@ -3911,6 +3940,19 @@ async function saveCurrentProgress(opts = {}) {
 }
 
 function flushPendingProgress(keepalive = false) {
+  // 스크롤이 멈추기를 기다리던 중(위치 계산 전)에 앱을 닫거나 다른 문서로 가면 지금 바로 계산해 저장 대상인지 판단
+  if (state.scrollTimer || state.scrollDirty) {
+    clearTimeout(state.scrollTimer);
+    state.scrollTimer = null;
+    state.scrollBurstStart = 0;
+    if (state.currentView === 'doc' && state.currentDoc) {
+      const pct = refreshScrollState();
+      const moved = !(typeof state.lastSavedPct === 'number' && Math.abs(pct - state.lastSavedPct) < 0.5);
+      if (!state.suppressScrollSave && state.userInteracted && moved && !state.saveTimer) {
+        state.saveTimer = setTimeout(() => saveCurrentProgress(), 900);
+      }
+    }
+  }
   if (state.saveTimer) {
     clearTimeout(state.saveTimer);
     state.saveTimer = null;
@@ -3925,20 +3967,79 @@ function flushPendingProgress(keepalive = false) {
    - 그 대신 화면 밖 높이는 어림값이라 "픽셀 %"는 기기·스크롤 상태마다 달라짐 →
      위치를 "문서 글자 분량 중 어디까지"로 계산(사진은 글자 200자로 침). 화면 폭이 다른 기기에서도 같은 %가 같은 내용
    - 읽는 줄: 맨 위에서는 화면 맨 위, 맨 아래로 갈수록 화면 아래쪽으로 이동 → 0%~100%가 끊김 없이 이어짐 */
-function buildReadingIndex(article) {
-  const blocks = Array.from(article.children);
-  const n = blocks.length;
-  const w = new Array(n);
-  const cum = new Array(n);
-  const headingOf = new Array(n);
+// 본문 블록 목록(큰 문서는 덩어리 안의 블록들)
+function getArticleBlocks(article) {
+  if (!article) return [];
+  if (article.querySelector(':scope > .cv-chunk')) return Array.from(article.querySelectorAll(':scope > .cv-chunk > *'));
+  return Array.from(article.children);
+}
+
+function readerMetrics(article) {
   const cs = getComputedStyle(article);
   const fs = parseFloat(cs.fontSize) || 18;
   const lh = parseFloat(cs.lineHeight) || fs * 1.8;
   const widthPx = Math.max(280, Math.min(window.innerWidth - 32, 900));
-  const cpl = Math.max(12, Math.floor(widthPx / (fs * 0.98)));   // 한 줄 글자 수(한글 기준 어림)
+  return { fs, lh, cpl: Math.max(12, Math.floor(widthPx / (fs * 0.98))) };
+}
+
+function estimateBlockPx(el, m) {
+  const tag = el.tagName;
+  const chars = (el.textContent || '').length;
+  const imgs = tag === 'IMG' ? 1 : el.getElementsByTagName('img').length;
+  let est;
+  if (/^H[1-6]$/.test(tag)) est = m.lh * 1.4 + m.fs * 2.4;
+  else if (el.classList.contains('table-scroll-wrapper') || tag === 'TABLE') est = el.getElementsByTagName('tr').length * m.lh * 1.5 + 28;
+  else est = Math.ceil(Math.max(1, chars) / m.cpl) * m.lh + m.fs * 1.2;
+  return est + imgs * 340;
+}
+
+// 블록 수천 개에 하나하나 "화면 밖 생략"을 걸면 스크롤할 때마다 브라우저가 그 수천 개를 확인하느라 끊김 →
+// 소제목 경계에서 약 1500~4000px 단위 덩어리로 묶어 덩어리만 생략(덩어리 약 100개)
+function chunkArticleBlocks(article, m) {
+  const kids = Array.from(article.children);
+  if (kids.length < 60) { article.classList.remove('cv-on'); return; }
+  let cur = [];
+  let curH = 0;
+  const flush = () => {
+    if (!cur.length) return;
+    const div = document.createElement('div');
+    div.className = 'cv-chunk';
+    div.style.containIntrinsicSize = `auto ${Math.round(curH)}px`;
+    article.insertBefore(div, cur[0]);
+    cur.forEach((el) => div.appendChild(el));
+    cur = [];
+    curH = 0;
+  };
+  kids.forEach((el) => {
+    if (cur.length && ((/^H[1-3]$/.test(el.tagName) && curH >= 1500) || curH >= 4000)) flush();
+    cur.push(el);
+    curH += estimateBlockPx(el, m);
+  });
+  flush();
+}
+
+// 덩어리 안 블록이 전부 숨겨졌으면(섹션 접기·챕터 넘김) 덩어리도 숨김 — 화면 밖에서 빈 높이로 남지 않게
+function syncChunkVisibility() {
+  const article = document.getElementById('ebook-article');
+  if (!article) return;
+  article.querySelectorAll(':scope > .cv-chunk').forEach((chunk) => {
+    let anyShown = false;
+    for (const c of chunk.children) {
+      if (!c.classList.contains('section-folded-hidden') && !c.classList.contains('chapter-page-hidden')) { anyShown = true; break; }
+    }
+    const want = anyShown ? '' : 'none';
+    if (chunk.style.display !== want) chunk.style.display = want;
+  });
+}
+
+function buildReadingIndex(article) {
+  const blocks = getArticleBlocks(article);
+  const n = blocks.length;
+  const w = new Array(n);
+  const cum = new Array(n);
+  const headingOf = new Array(n);
   let total = 0;
   let lastHeading = '';
-  const useCv = article.classList.contains('cv-on') || n > 40;
   for (let i = 0; i < n; i++) {
     const el = blocks[i];
     const tag = el.tagName;
@@ -3949,17 +4050,15 @@ function buildReadingIndex(article) {
     w[i] = Math.max(1, chars) + imgs * 200;
     cum[i] = total;
     total += w[i];
-    if (useCv) {
-      let est;
-      if (/^H[1-6]$/.test(tag)) est = lh * 1.4 + fs * 2.4;
-      else if (el.classList.contains('table-scroll-wrapper') || tag === 'TABLE') est = el.getElementsByTagName('tr').length * lh * 1.5 + 28;
-      else est = Math.ceil(Math.max(1, chars) / cpl) * lh + fs * 1.2;
-      est += imgs * 340;
-      el.style.containIntrinsicSize = `auto ${Math.round(est)}px`;
-    }
   }
-  article.classList.toggle('cv-on', useCv);
-  state.readIdx = { article, blocks, w, cum, total, headingOf };
+  // 덩어리별 블록 범위(덩어리 단위로 먼저 찾아서, 화면 밖 덩어리 안을 들여다보지 않게 — 들여다보면 그 덩어리를 강제로 그림)
+  const chunks = Array.from(article.querySelectorAll(':scope > .cv-chunk'));
+  const chunkStart = [];
+  if (chunks.length) {
+    let k = 0;
+    chunks.forEach((c) => { chunkStart.push(k); k += c.children.length; });
+  }
+  state.readIdx = { article, blocks, w, cum, total, headingOf, chunks, chunkStart };
   state.placedPos = null;
   state.posHeadingId = '';
 }
@@ -3978,6 +4077,27 @@ function findBlockAtY(idx, y) {
   const b = idx.blocks;
   let lo = 0;
   let hi = b.length - 1;
+  if (idx.chunks && idx.chunks.length) {
+    // 1단계: y 위에서 시작하는 마지막(보이는) 덩어리
+    const cs = idx.chunks;
+    let clo = 0;
+    let chi = cs.length - 1;
+    let cans = -1;
+    while (clo <= chi) {
+      const mid = (clo + chi) >> 1;
+      let m = mid;
+      while (m <= chi && cs[m].style.display === 'none') m++;
+      if (m > chi) { chi = mid - 1; continue; }
+      if (cs[m].getBoundingClientRect().top <= y) { cans = m; clo = m + 1; } else { chi = mid - 1; }
+    }
+    if (cans >= 0) {
+      lo = idx.chunkStart[cans];
+      hi = cans + 1 < cs.length ? idx.chunkStart[cans + 1] - 1 : b.length - 1;
+    } else {
+      hi = cs.length > 1 ? idx.chunkStart[1] - 1 : b.length - 1;
+    }
+  }
+  const lo0 = lo;
   let ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
@@ -3987,7 +4107,8 @@ function findBlockAtY(idx, y) {
     if (b[m].getBoundingClientRect().top <= y) { ans = m; lo = m + 1; } else { hi = mid - 1; }
   }
   if (ans === -1) {
-    for (let i = 0; i < b.length; i++) if (blockShown(b[i])) return i;
+    for (let i = lo0; i < b.length; i++) if (blockShown(b[i])) return i;
+    for (let i = 0; i < lo0; i++) if (blockShown(b[i])) return i;
   }
   return ans;
 }
@@ -4512,13 +4633,14 @@ function setupChapterPagination() {
     toolbar.classList.remove('flex');
     modeBtn.innerHTML = '📜 스크롤';
     // 숨겨진 것만 되돌림(모든 블록의 class를 다시 쓰면 큰 문서에서 화면 전체를 다시 계산함)
-    article.querySelectorAll(':scope > .chapter-page-hidden').forEach((el) => el.classList.remove('chapter-page-hidden'));
+    article.querySelectorAll('.chapter-page-hidden').forEach((el) => el.classList.remove('chapter-page-hidden'));
+    syncChunkVisibility();
     return;
   }
 
   modeBtn.innerHTML = '📖 챕터넘김';
 
-  const children = Array.from(article.children);
+  const children = getArticleBlocks(article);
   const chapters = [];
   let currentGroup = [];
 
@@ -4554,10 +4676,10 @@ function renderCurrentChapterPage() {
   chapters.forEach((group, idx) => {
     const hide = idx !== state.currentChapterIdx;
     group.forEach((el) => {
-      if (hide) el.classList.add('chapter-page-hidden');
-      else el.classList.remove('chapter-page-hidden');
+      if (hide !== el.classList.contains('chapter-page-hidden')) el.classList.toggle('chapter-page-hidden', hide);
     });
   });
+  syncChunkVisibility();
 
   document.getElementById('paginated-status').textContent =
     `챕터 ${state.currentChapterIdx + 1} / ${chapters.length}`;

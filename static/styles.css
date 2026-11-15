@@ -1179,10 +1179,12 @@ body.drawer-open .reader-zoom-control { display: none !important; }
 
 /* 큰 문서 속도(2026-11-15): 화면 밖 블록은 그리지 않음. 높이 어림값은 app.js buildReadingIndex가 블록마다 지정
    (한 번 그려진 블록은 브라우저가 실제 높이를 기억 — "auto") */
-#ebook-article.cv-on > * {
+#ebook-article.cv-on > .cv-chunk {
   content-visibility: auto;
-  contain-intrinsic-size: auto 60px;
+  contain-intrinsic-size: auto 2000px;
 }
+/* 덩어리 경계에서 위아래 여백이 겹치지(합쳐지지) 않아 두 배가 되는 것 방지 */
+#ebook-article.cv-on > .cv-chunk > :last-child { margin-bottom: 0; }
 
 /* "읽던 위치" 알림: 화면 가운데 기준 배치라 폭이 화면 절반으로 줄어 320px 폰에서 글자·버튼이 세로로 찌그러졌음(2026-11-15) */
 #resume-toast { width: max-content; max-width: calc(100vw - 24px); }
