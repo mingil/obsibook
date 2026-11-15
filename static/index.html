@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="ko" data-theme="warm_paper">
 <head>
+  <!-- 문서를 보던 중 새로고침: 다른 스크립트를 받기 전부터 홈 화면 대신 불러오기 표시(2026-11-15) -->
+  <script>if (location.hash.indexOf("#doc=") === 0) document.documentElement.classList.add("boot-doc");</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
   <title>ObsiBook — 옵시디언 스터디 & 이북 리더</title>
@@ -24,12 +26,14 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 
-  <link rel="stylesheet" href="/static/styles.css?v=3.10.1" />
-  <link rel="stylesheet" href="/static/tailwind.css?v=3.10.1" />
+  <link rel="stylesheet" href="/static/styles.css?v=3.10.2" />
+  <link rel="stylesheet" href="/static/tailwind.css?v=3.10.2" />
 </head>
 <body>
   <!-- Eye-Care Warm Blue-Light Filter Overlay -->
   <div id="eyecare-overlay"></div>
+  <!-- 큰 문서 불러오기 진행 표시(app.js showDocLoader가 채움) -->
+  <div id="doc-load-progress" class="hidden" role="status" aria-live="polite"><div class="dlp-card"><div class="dlp-icon">📖</div><div class="dlp-title"></div><div class="dlp-stage">서재 확인 중… (1/5)</div><div class="dlp-bar"><div class="dlp-fill" style="width: 8%"></div><div class="dlp-shine"></div></div><div class="dlp-steps"></div></div></div>
   <!-- 집중 모드 끝내기 버튼 (집중 모드일 때만 보임) -->
   <button type="button" id="zen-exit-btn" class="zen-exit-btn" onclick="toggleZenMode(false)" title="집중 모드 끝내기 (Esc 또는 F)">✕ 집중 모드 끝내기</button>
 
@@ -1081,6 +1085,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3.10.1"></script>
+  <script src="/static/app.js?v=3.10.2"></script>
 </body>
 </html>

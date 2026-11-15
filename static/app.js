@@ -812,6 +812,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('sidebar-left').classList.add('collapsed');
   }
 
+  // 문서를 보던 중 새로고침: 빈 홈 화면(숫자 0) 대신 바로 문서 불러오기 진행 표시
+  if (window.location.hash.startsWith('#doc=')) {
+    const bootPath = decodeURIComponent(window.location.hash.slice(5));
+    document.getElementById('dashboard-view').classList.add('hidden');
+    document.getElementById('document-view').classList.remove('hidden');
+    showDocLoader(bootPath.split('/').pop().replace(/\.md$/i, ''), 0);
+  }
+
   try {
     const auth = await fetch('/api/auth/status').then((r) => r.json());
     if (auth.vault_title) {
@@ -850,6 +858,7 @@ function setupOutsidePopoverClickCloser() {
 }
 
 function showAuthModal() {
+  hideDocLoader();
   const modal = document.getElementById('auth-modal');
   modal.classList.remove('hidden');
   modal.classList.add('flex');
@@ -1589,6 +1598,7 @@ function updateStudyGamificationUI(st) {
 }
 
 function showDashboard(options = {}) {
+  hideDocLoader();
   stopTTS();
   flushPendingProgress();
   state.currentView = 'dashboard';
@@ -1843,6 +1853,7 @@ function renderDashboard() {
    VIEW 2: Real Hierarchical Folder & File Explorer View
    ========================================================= */
 function openFolderExplorer(folderPath, options = {}) {
+  hideDocLoader();
   if (!state.library) return;
   const cleanPath = String(folderPath || '').replace(/^\/+|\/+$/g, '');
   if (!cleanPath) {
@@ -2440,6 +2451,15 @@ async function openDocument(docPath, options = {}) {
   }
   syncMobileBackdrop();
 
+  // 큰 문서(150KB 이상)거나 새로고침 직후면 단계·게이지 표시
+  const metaForSize = (state.library && state.library.documents || []).find((d) => d.path === docPath);
+  const cachedRaw = state.docCache.get(docPath);
+  const bigDoc = Boolean(state.docLoaderShownAt)
+    || Number((metaForSize && metaForSize.size_bytes) || 0) > 150000
+    || Boolean(cachedRaw && cachedRaw.content && cachedRaw.content.length > 150000);
+  const loaderTitle = (metaForSize && metaForSize.title) || docPath.split('/').pop().replace(/\.md$/i, '');
+  if (bigDoc) { showDocLoader(loaderTitle, cachedRaw ? 2 : 1); await nextPaint(); }
+
   // Fast Path: Instant 0ms cache hit from state.docCache
   let rawDoc = state.docCache.get(docPath);
   if (!rawDoc) {
@@ -2458,7 +2478,12 @@ async function openDocument(docPath, options = {}) {
       </div>
     `;
     const inFlight = state.prefetchInFlight.get(docPath);
-    rawDoc = inFlight ? await inFlight : await apiFetch(`/api/doc?path=${encodeURIComponent(docPath)}`);
+    try {
+      rawDoc = inFlight ? await inFlight : await apiFetch(`/api/doc?path=${encodeURIComponent(docPath)}`);
+    } catch (e) {
+      hideDocLoader();   // 문서를 못 받으면 진행 표시를 남기지 않음
+      throw e;
+    }
     if (rawDoc && rawDoc.path) {
       state.docCache.set(rawDoc.path, rawDoc);
       ObsiBookIDB.saveDocsBatch([rawDoc]);
@@ -2605,6 +2630,15 @@ async function openDocument(docPath, options = {}) {
       </div>
     `;
   } else {
+    if (bigDoc) {
+      // 변환(가장 오래 걸림)과 화면 만들기를 나눠 단계마다 화면에 표시
+      await loadPersistedDocHtml(doc, doc.content || '');
+      showDocLoader(loaderTitle, 2);
+      await nextPaint();
+      cachedMarkdownHtml(doc, doc.content || '');
+      showDocLoader(loaderTitle, 3);
+      await nextPaint();
+    }
     renderMarkdownArticle(doc);
   }
 
@@ -2641,6 +2675,7 @@ async function openDocument(docPath, options = {}) {
   }
 
   // Restore scroll position
+  if (bigDoc) { showDocLoader(loaderTitle, 4); setTimeout(hideDocLoader, 220); } else if (state.docLoaderShownAt) hideDocLoader();
   const viewport = document.getElementById('reader-viewport');
   state.suppressScrollSave = true;
   const savedPct = doc.progress ? Number(doc.progress.scroll_percent || 0) : 0;
@@ -2677,6 +2712,87 @@ async function openDocument(docPath, options = {}) {
   }
 }
 
+/* ===== 큰 문서 불러오기 진행 표시 (2026-11-15) =====
+   새로고침·큰 문서 열기 때 화면이 멈춘 것처럼(또는 빈 홈 화면으로) 보이던 것 → 단계와 게이지를 보여 줌.
+   반짝이는 막대는 브라우저가 따로 그리는 움직임이라 계산으로 바쁜 동안에도 계속 움직임 */
+const DOC_LOAD_STEPS = ['서재 확인', '문서 받기', '변환', '화면 만들기', '위치 이동'];
+const DOC_LOAD_PCT = [8, 28, 52, 78, 95];
+function showDocLoader(title, step) {
+  let el = document.getElementById('doc-load-progress');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'doc-load-progress';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = '<div class="dlp-card"><div class="dlp-icon">📖</div><div class="dlp-title"></div><div class="dlp-stage"></div>'
+      + '<div class="dlp-bar"><div class="dlp-fill"></div><div class="dlp-shine"></div></div><div class="dlp-steps"></div></div>';
+    document.body.appendChild(el);
+  }
+  if (title != null) el.querySelector('.dlp-title').textContent = title;
+  const i = Math.max(0, Math.min(DOC_LOAD_STEPS.length - 1, step));
+  el.querySelector('.dlp-stage').textContent = `${DOC_LOAD_STEPS[i]} 중… (${i + 1}/${DOC_LOAD_STEPS.length}) · 큰 문서는 잠시 걸려요`;
+  el.querySelector('.dlp-fill').style.width = `${DOC_LOAD_PCT[i]}%`;
+  el.querySelector('.dlp-steps').innerHTML = DOC_LOAD_STEPS.map((t, k) => `<span class="${k < i ? 'done' : k === i ? 'on' : ''}">${k < i ? '✓ ' : ''}${t}</span>`).join('');
+  el.classList.remove('hidden');
+  if (!state.docLoaderShownAt) state.docLoaderShownAt = performance.now();
+  clearTimeout(state.docLoaderFailsafe);
+  state.docLoaderFailsafe = setTimeout(hideDocLoader, 30000);   // 어떤 이유로든 30초 넘게 남지 않게
+}
+function hideDocLoader() {
+  document.documentElement.classList.remove('boot-doc');
+  const el = document.getElementById('doc-load-progress');
+  if (el) el.classList.add('hidden');
+  state.docLoaderShownAt = 0;
+  clearTimeout(state.docLoaderFailsafe);
+}
+// 화면이 한 번 그려지도록 잠깐 양보(진행 단계 표시가 실제로 보이게)
+function nextPaint() {
+  return new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+}
+
+/* 큰 문서의 변환 결과를 기기(IndexedDB)에도 저장 → 새로고침해도 변환 생략(최근 6개, 앱 버전이 바뀌면 새로) */
+const HTML_CACHE_VER = 'h1';
+const HTML_PERSIST_MIN = 100000;
+async function idbMetaGet(key) {
+  const db = await ObsiBookIDB.open();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction('meta', 'readonly').objectStore('meta').get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+async function idbMetaPut(entries) {
+  const db = await ObsiBookIDB.open();
+  if (!db) return;
+  try {
+    const tx = db.transaction('meta', 'readwrite');
+    const st = tx.objectStore('meta');
+    entries.forEach(([k, v]) => (v === undefined ? st.delete(k) : st.put(v, k)));
+  } catch (e) {}
+}
+function persistDocHtml(key, html) {
+  setTimeout(async () => {
+    const idxKey = `html_index_${HTML_CACHE_VER}`;
+    const list = ((await idbMetaGet(idxKey)) || []).filter((k) => k !== key);
+    list.unshift(key);
+    const drop = list.splice(6);
+    idbMetaPut([[`html_${HTML_CACHE_VER}:${key}`, html], [idxKey, list], ...drop.map((k) => [`html_${HTML_CACHE_VER}:${k}`, undefined])]);
+  }, 1500);
+}
+async function loadPersistedDocHtml(doc, raw) {
+  if (!raw || raw.length < HTML_PERSIST_MIN) return;
+  const key = htmlCacheKey(doc, raw);
+  if (state.htmlCache && state.htmlCache.has(key)) return;
+  const html = await idbMetaGet(`html_${HTML_CACHE_VER}:${key}`);
+  if (typeof html === 'string' && html.length) {
+    if (!state.htmlCache) state.htmlCache = new Map();
+    state.htmlCache.set(key, html);
+  }
+}
+
 function openCurrentDocFolder() {
   if (state.currentDoc && (state.currentDoc.folder || state.currentDoc.top_folder)) {
     openFolderExplorer(state.currentDoc.folder || state.currentDoc.top_folder);
@@ -2698,6 +2814,7 @@ function renderMarkdownArticle(doc) {
   // 화면 밖 블록 그리기 생략을 내용을 넣기 "전에" 켬(넣은 뒤 켜면 2만 개 요소 스타일을 한 번 다 계산함)
   article.classList.toggle('cv-on', rawContent.length > 20000);
   article.innerHTML = mdHtml;
+  wrapLooseTopLevelText(article);
   enhanceArticleImages(article);
 
   // 1. Assign Heading IDs, Sync TOC Slugs, Bookmark Pin Button, and Section Collapse Button
@@ -3967,6 +4084,30 @@ function flushPendingProgress(keepalive = false) {
    - 그 대신 화면 밖 높이는 어림값이라 "픽셀 %"는 기기·스크롤 상태마다 달라짐 →
      위치를 "문서 글자 분량 중 어디까지"로 계산(사진은 글자 200자로 침). 화면 폭이 다른 기기에서도 같은 %가 같은 내용
    - 읽는 줄: 맨 위에서는 화면 맨 위, 맨 아래로 갈수록 화면 아래쪽으로 이동 → 0%~100%가 끊김 없이 이어짐 */
+// 본문 맨 바깥에 문단 없이 놓인 글자·줄바꿈(<br> 한 줄 다음에 오는 문장 등 — 마크다운이 HTML 블록으로 처리)을 문단으로 감쌈
+// 감싸지 않으면 덩어리 묶기·위치 계산에서 빠져 엉뚱한 곳(문서 맨 위)으로 밀려났음(2026-11-15 2024년 전문의 8번 문제 사례)
+const INLINE_TAGS = new Set(['BR', 'SPAN', 'STRONG', 'EM', 'B', 'I', 'U', 'S', 'A', 'CODE', 'MARK', 'SUB', 'SUP', 'IMG', 'DEL', 'INS', 'KBD', 'SMALL', 'ABBR', 'Q', 'CITE', 'TIME', 'FONT', 'LABEL', 'INPUT']);
+function wrapLooseTopLevelText(article) {
+  const nodes = Array.from(article.childNodes);
+  let run = [];
+  const flush = () => {
+    const hasText = run.some((n) => (n.nodeType === 3 && n.textContent.trim()) || (n.nodeType === 1 && n.tagName !== 'BR'));
+    if (hasText) {
+      const para = document.createElement('p');
+      article.insertBefore(para, run[0]);
+      run.forEach((n) => para.appendChild(n));
+      // 앞뒤 빈 줄바꿈 정리(<br>만 있는 줄은 이미 빈 줄 역할)
+      while (para.firstChild && ((para.firstChild.nodeType === 3 && !para.firstChild.textContent.trim()) || para.firstChild.nodeName === 'BR')) para.removeChild(para.firstChild);
+    }
+    run = [];
+  };
+  nodes.forEach((n) => {
+    if (n.nodeType === 3 || (n.nodeType === 1 && INLINE_TAGS.has(n.tagName))) run.push(n);
+    else if (n.nodeType === 8) { /* 주석 무시 */ } else flush();
+  });
+  flush();
+}
+
 // 본문 블록 목록(큰 문서는 덩어리 안의 블록들)
 function getArticleBlocks(article) {
   if (!article) return [];
@@ -4010,7 +4151,9 @@ function chunkArticleBlocks(article, m) {
     cur = [];
     curH = 0;
   };
-  kids.forEach((el) => {
+  // 요소가 아닌 것(남은 줄바꿈·공백 글자)도 순서 그대로 덩어리 안으로 — 덩어리 밖에 남으면 위치가 뒤섞임
+  Array.from(article.childNodes).forEach((el) => {
+    if (el.nodeType !== 1) { if (cur.length || el.textContent.trim() || el.nodeName === 'BR') cur.push(el); return; }
     if (cur.length && ((/^H[1-3]$/.test(el.tagName) && curH >= 1500) || curH >= 4000)) flush();
     cur.push(el);
     curH += estimateBlockPx(el, m);
@@ -4233,15 +4376,23 @@ function scrollToSavedPosition(pct, headingId) {
   }
 }
 
-function cachedMarkdownHtml(doc, raw) {
-  // 한 번 그린 문서의 HTML은 기억(최근 12개) → 다시 열 때 변환 생략. 내용이 바뀌면 다시 변환
-  if (!state.htmlCache) state.htmlCache = new Map();
+function htmlCacheKey(doc, raw) {
+  if (state.lastHtmlKey && state.lastHtmlKey.raw === raw && state.lastHtmlKey.path === doc.path) return state.lastHtmlKey.key;
   let h = 2166136261;
   for (let i = 0; i < raw.length; i++) h = Math.imul(h ^ raw.charCodeAt(i), 16777619);
   const key = `${doc.path}|${raw.length}|${h >>> 0}`;
+  state.lastHtmlKey = { raw, path: doc.path, key };
+  return key;
+}
+
+function cachedMarkdownHtml(doc, raw) {
+  // 한 번 그린 문서의 HTML은 기억(최근 12개) → 다시 열 때 변환 생략. 내용이 바뀌면 다시 변환
+  if (!state.htmlCache) state.htmlCache = new Map();
+  const key = htmlCacheKey(doc, raw);
   let html = state.htmlCache.get(key);
   if (html === undefined) {
     html = renderObsidianMarkdownToHtml(raw);
+    if (raw.length >= HTML_PERSIST_MIN) persistDocHtml(key, html);
   } else {
     state.htmlCache.delete(key);
   }
