@@ -523,6 +523,7 @@ html, body {
 
 .ebook-content ol {
   list-style-type: decimal;
+  padding-left: 2.2em;   /* 두·세 자리 번호("32.", "105.")가 왼쪽 밖으로 나가지 않게(2026-11-17) */
 }
 
 .ebook-content li {
@@ -621,8 +622,9 @@ html, body {
 .user-hl-pink   { background: rgba(251, 113, 133, 0.32); border-bottom: 2px solid #f43f5e; padding: 1px 3px; border-radius: 3px; cursor: pointer; }
 
 /* 🧠 Active Recall Cloze Mode (빈칸 가리기 암기 학습) */
-.cloze-target {
-  transition: all 0.18s ease;
+/* 2026-11-17: 미리 표시해 둔 수천 개에 항상 "모든 속성 애니메이션"이 걸려 테마·글꼴을 바꿀 때마다 무거웠음 → 암기 모드일 때 색만 */
+.cloze-mode-active .cloze-target {
+  transition: background-color 0.18s ease, border-color 0.18s ease;
 }
 
 .cloze-mode-active .cloze-hidden {
@@ -1182,6 +1184,10 @@ body.drawer-open .reader-zoom-control { display: none !important; }
 #ebook-article.cv-on > .cv-chunk {
   content-visibility: auto;
   contain-intrinsic-size: auto 2000px;
+  /* 화면 밖 생략(content-visibility)은 덩어리 상자 밖으로 삐져나온 그림을 잘라냄 → 줄 맨 앞·끝 글자(예: "32."의 3)나
+     목록 번호가 아이패드 사파리에서 살짝 잘렸음(2026-11-17). 좌우로 여유를 주고 같은 만큼 바깥으로 넓혀 글 위치는 그대로 */
+  padding-inline: 10px;
+  margin-inline: -10px;
 }
 /* 덩어리 경계에서 위아래 여백이 겹치지(합쳐지지) 않아 두 배가 되는 것 방지 */
 #ebook-article.cv-on > .cv-chunk > :last-child { margin-bottom: 0; }
@@ -1208,3 +1214,7 @@ body.drawer-open .reader-zoom-control { display: none !important; }
 @media (prefers-reduced-motion: reduce) { #doc-load-progress .dlp-shine { animation-duration: 3s; } }
 html.boot-doc #dashboard-view { display: none !important; }
 html.boot-doc #doc-load-progress { display: flex; }
+
+/* 목차: 소제목이 수천~만 개인 문서에서 "space-y"(앞 형제들과 비교하는 간격 규칙)가 스타일 계산을 폭증시켜 열기에 20초+ 걸렸음(2026-11-17)
+   → 항목마다 아래 여백만 주는 단순 규칙으로 */
+#right-toc-list > .toc-entry { margin-bottom: 0.25rem; }

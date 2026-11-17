@@ -259,7 +259,11 @@ class DatabaseManager:
             if existing and read_ts and (existing["last_device"] or "") == device_id and ex_ts == ts:
                 # 같은 저장이 두 번 도착(앱이 닫히며 보낸 것 + 다시 보내기) → 한 번만 반영
                 return dict(existing)
-            if read_ts and ex_ts and ts < ex_ts:
+            if existing and not read_ts and base_rev is None and (existing["last_device"] or ""):
+                # 2026-11-14 이전 화면 코드(기기 ID·버전·읽은 시각 없이 저장) — 며칠씩 새로고침 안 한 기기의 예전 위치가
+                # 새 기기들의 기록을 덮지 않게 위치는 바꾸지 않음(읽은 시간만 더함)
+                stale = True
+            elif read_ts and ex_ts and ts < ex_ts:
                 # 이미 더 나중에 읽은 기록이 있음 → 늦게 도착한 예전 저장은 위치를 바꾸지 않음
                 stale = True
             elif (

@@ -233,6 +233,22 @@ def manifest_file():
     return FileResponse(str(STATIC_DIR / "manifest.json"))
 
 
+def _asset_version() -> str:
+    """index.html 의 app.js?v=… (기기들이 오래된 화면 코드를 계속 쓰고 있는지 비교용, 2026-11-17)"""
+    import re
+    try:
+        m = re.search(r"app\.js\?v=([\w.]+)", (STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+
+@app.get("/api/version")
+def app_version():
+    # 로그인 없이 볼 수 있는 화면 버전 문자열만(비밀 정보 없음)
+    return {"asset": _asset_version()}
+
+
 @app.get("/api/health")
 def health_check():
     scanner = get_scanner()
@@ -417,6 +433,20 @@ def _build_library_response(force_rescan: bool = False) -> dict:
         if not (d.get("is_completed") or d.get("completed_count", 0) > 0) and d.get("scroll_percent", 0) > 0
     )
 
+    # 2026-11-17: 서재 목록에는 문서별 소제목 전체(headings)를 빼고 보냄 — 화면은 쓰지 않는데(목차는 문서를 열 때 본문에서 만듦)
+    # 1,837개 문서에서 목록이 19.8MB로 커져 접속·새로고침이 7초 넘게 걸렸음. 스캐너 캐시 원본은 건드리지 않게 복사본으로
+    slim_map = {d["path"]: {k: v for k, v in d.items() if k != "headings"} for d in tree["documents"]}
+    slim_documents = [slim_map[d["path"]] for d in tree["documents"]]
+
+    def _slim_dir(node):
+        out = dict(node)
+        if "direct_docs" in out:
+            out["direct_docs"] = [slim_map.get(x.get("path"), x) if isinstance(x, dict) else x for x in out["direct_docs"]]
+        return out
+
+    dirs = tree["directories"]
+    slim_directories = {k: _slim_dir(v) for k, v in dirs.items()} if isinstance(dirs, dict) else [_slim_dir(v) for v in dirs]
+
     return {
         "vault_title": VAULT_TITLE,
         "read_only_mode": True,
@@ -433,8 +463,8 @@ def _build_library_response(force_rescan: bool = False) -> dict:
         "study_stats": study_stats,
         "folders": tree["folders"],
         "folder_tree": tree["folder_tree"],
-        "directories": tree["directories"],
-        "documents": tree["documents"],
+        "directories": slim_directories,
+        "documents": slim_documents,
         "tags": tree["tags"],
         "recent_reads": valid_recent,
         "bookmarks": bookmarks,

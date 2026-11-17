@@ -3017,6 +3017,9 @@ function renderMarkdownArticle(doc) {
   // 7. Highlight user-saved highlights inside the rendered DOM
   applySavedHighlightsToDOM(doc.highlights || []);
 
+  // 7-2. 암기 모드용 표시는 한가할 때 미리
+  scheduleClozePrep(article);
+
   // 8. 큰 문서: 블록을 덩어리(약 100개)로 묶어 화면 밖 덩어리는 그리지 않음 + 읽은 위치 계산용 색인
   if (article.classList.contains('cv-on')) chunkArticleBlocks(article, metrics);
   buildReadingIndex(article);
@@ -3060,53 +3063,85 @@ function toggleClozeMode() {
   updateClozeToolbarUI();
 }
 
+/* 암기(빈칸) 모드 속도(2026-11-17): 큰 문서에서 켤 때마다 굵은 글씨 수천 개를 표시하고 하나씩 클릭 처리기를 달아 느렸음 →
+   문서를 연 뒤 한가할 때 조금씩 미리 표시(cloze-target), 클릭은 본문 하나에서 처리, 켜고 끄기는 본문 스위치(class)만 */
+const CLOZE_SELECTOR = 'strong, b, mark, .obs-hl, p > code, li > code, td > code';
+function clozeEligible(el) {
+  if (el.closest('h1, h2, h3, h4, .obsidian-callout-title, pre')) return false;
+  return el.textContent.trim().length >= 2;
+}
+function scheduleClozePrep(article) {
+  const list = Array.from(article.querySelectorAll(CLOZE_SELECTOR));
+  const job = { article, list, i: 0, count: 0, done: false };
+  state.clozePrep = job;
+  const step = (deadline) => {
+    if (state.clozePrep !== job || job.done) return;
+    const until = performance.now() + 8;
+    while (job.i < job.list.length && (deadline && deadline.timeRemaining ? deadline.timeRemaining() > 2 : performance.now() < until)) {
+      prepOneCloze(job, job.list[job.i++]);
+    }
+    if (job.i >= job.list.length) { job.done = true; return; }
+    if (window.requestIdleCallback) requestIdleCallback(step, { timeout: 1500 }); else setTimeout(step, 30);
+  };
+  if (window.requestIdleCallback) requestIdleCallback(step, { timeout: 1500 }); else setTimeout(step, 300);
+}
+function prepOneCloze(job, el) {
+  if (!clozeEligible(el)) return;
+  el.classList.add('cloze-target', 'cloze-hidden');
+  job.count += 1;
+}
+function finishClozePrep(article) {
+  let job = state.clozePrep;
+  if (!job || job.article !== article) { scheduleClozePrep(article); job = state.clozePrep; }
+  while (job.i < job.list.length) prepOneCloze(job, job.list[job.i++]);
+  job.done = true;
+  return job.count;
+}
+function setupClozeClickDelegation() {
+  const article = document.getElementById('ebook-article');
+  if (!article || article.dataset.clozeDelegated) return;
+  article.dataset.clozeDelegated = '1';
+  article.addEventListener('click', (e) => {
+    if (!state.clozeActive) return;
+    const el = e.target.closest && e.target.closest('.cloze-target');
+    if (!el || !article.contains(el)) return;
+    e.stopPropagation();
+    if (el.classList.contains('cloze-hidden')) {
+      el.classList.remove('cloze-hidden');
+      el.classList.add('cloze-revealed');
+      if (el.dataset.clozeSolved !== '1') {
+        el.dataset.clozeSolved = '1';
+        state.clozeRevealedCount += 1;
+        updateClozeToolbarUI();
+        showXpToast('🧠 암기 확인! +10 XP');
+        apiFetch('/api/study/log', {
+          method: 'POST',
+          body: JSON.stringify({ add_quiz: 1, add_xp: 10 }),
+        })
+          .then((res) => {
+            if (res.study_stats) updateStudyGamificationUI(res.study_stats);
+          })
+          .catch(() => {});
+      }
+    } else {
+      el.classList.remove('cloze-revealed');
+      el.classList.add('cloze-hidden');
+    }
+  });
+}
+
 function applyClozeTargetsInArticle() {
   const article = document.getElementById('ebook-article');
   if (!article) return;
-  article.classList.add('cloze-mode-active');
-
-  const candidates = article.querySelectorAll('strong, b, mark, .obs-hl, p > code, li > code, td > code');
-  let count = 0;
-  candidates.forEach((el) => {
-    if (el.closest('h1, h2, h3, h4, .obsidian-callout-title, pre')) return;
-    const text = el.textContent.trim();
-    if (text.length < 2) return;
-
-    el.classList.add('cloze-target', 'cloze-hidden');
+  setupClozeClickDelegation();
+  const count = finishClozePrep(article);   // 미리 표시가 덜 끝났으면 남은 것만
+  // 새로 켤 때는 모두 다시 가림(이전에 본 것만 되돌리면 됨 — 보통 몇 개)
+  article.querySelectorAll('.cloze-revealed').forEach((el) => {
     el.classList.remove('cloze-revealed');
-    el.dataset.clozeSolved = '0';
-
-    if (!el.dataset.clozeBound) {
-      el.dataset.clozeBound = '1';
-      el.addEventListener('click', (e) => {
-        if (!state.clozeActive) return;
-        e.stopPropagation();
-        if (el.classList.contains('cloze-hidden')) {
-          el.classList.remove('cloze-hidden');
-          el.classList.add('cloze-revealed');
-          if (el.dataset.clozeSolved === '0') {
-            el.dataset.clozeSolved = '1';
-            state.clozeRevealedCount += 1;
-            updateClozeToolbarUI();
-            showXpToast('🧠 암기 확인! +10 XP');
-            apiFetch('/api/study/log', {
-              method: 'POST',
-              body: JSON.stringify({ add_quiz: 1, add_xp: 10 }),
-            })
-              .then((res) => {
-                if (res.study_stats) updateStudyGamificationUI(res.study_stats);
-              })
-              .catch(() => {});
-          }
-        } else {
-          el.classList.remove('cloze-revealed');
-          el.classList.add('cloze-hidden');
-        }
-      });
-    }
-    count += 1;
+    el.classList.add('cloze-hidden');
   });
-
+  article.querySelectorAll('[data-cloze-solved="1"]').forEach((el) => { delete el.dataset.clozeSolved; });
+  article.classList.add('cloze-mode-active');
   state.clozeTotal = count;
   state.clozeRevealedCount = 0;
   updateClozeToolbarUI();
@@ -3115,10 +3150,8 @@ function applyClozeTargetsInArticle() {
 function clearClozeTargetsInArticle() {
   const article = document.getElementById('ebook-article');
   if (!article) return;
+  // 끌 때는 스위치만(표시는 남겨 두고 다음에 켤 때 다시 씀 — 가림 모양은 스위치가 켜졌을 때만 보임)
   article.classList.remove('cloze-mode-active');
-  article.querySelectorAll('.cloze-target').forEach((el) => {
-    el.classList.remove('cloze-hidden', 'cloze-revealed');
-  });
 }
 
 function revealAllCloze(show) {
@@ -3907,12 +3940,17 @@ function setActiveHeading(active) {
     state.currentHeadingId = active.id;
     state.currentHeadingText = active.childNodes[0] ? active.childNodes[0].textContent.trim() : active.textContent.trim();
 
-    document.querySelectorAll('.toc-entry').forEach((el) => {
+    // 목차 전체(소제목 수천~만 개)를 매번 다시 칠하지 않고, 이전에 강조했던 것과 새것만 바꿈(2026-11-17)
+    const prevToc = state.activeTocEl && state.activeTocEl.isConnected ? [state.activeTocEl] : Array.from(document.querySelectorAll('.toc-entry[data-active="1"]'));
+    prevToc.forEach((el) => {
       el.style.background = 'transparent';
       el.style.color = 'var(--text-primary)';
       el.style.fontWeight = '400';
+      el.removeAttribute('data-active');
     });
     const activeToc = document.getElementById(`toc-item-${active.id}`);
+    state.activeTocEl = activeToc || null;
+    if (activeToc) activeToc.setAttribute('data-active', '1');
     if (activeToc) {
       activeToc.style.background = 'var(--accent-soft)';
       activeToc.style.color = 'var(--accent-color)';
@@ -4392,7 +4430,7 @@ function cachedMarkdownHtml(doc, raw) {
   let html = state.htmlCache.get(key);
   if (html === undefined) {
     html = renderObsidianMarkdownToHtml(raw);
-    if (raw.length >= HTML_PERSIST_MIN) persistDocHtml(key, html);
+    if (raw.length >= HTML_PERSIST_MIN && raw.length < 5000000) persistDocHtml(key, html);   // 아주 큰 문서(5MB+)는 저장 자체가 0.5초 걸려 제외
   } else {
     state.htmlCache.delete(key);
   }
@@ -4486,8 +4524,42 @@ function getDeviceId() {
     id = 'd-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
     try { localStorage.setItem('obsibook_device_id', id); } catch (e) {}
   }
-  state.deviceId = id;
-  return id;
+  // 같은 브라우저의 탭(창)마다 따로 구분(2026-11-17): 탭 두 개를 열어 둔 경우 오래된 탭이 같은 기기로 취급돼
+  // 새 탭에서 더 읽은 위치를 덮어쓸 수 있었음. 새로고침해도 같은 탭이면 같은 번호(sessionStorage)
+  let tab = '';
+  try {
+    tab = sessionStorage.getItem('obsibook_tab_id') || '';
+    if (!tab) { tab = Math.random().toString(36).slice(2, 8); sessionStorage.setItem('obsibook_tab_id', tab); }
+  } catch (e) {}
+  state.deviceId = tab ? `${id}.${tab}` : id;
+  return state.deviceId;
+}
+
+/* 새 버전 자동 적용(2026-11-17): 며칠씩 켜 둔 기기가 예전 화면 코드로 계속 동작하지 않게.
+   다른 앱·기기를 쓰다 돌아왔을 때(1분 이상) 버전이 바뀌었으면 바로 새로고침(읽던 곳은 저장 후 다시 열림),
+   읽는 도중이면 알림만 띄우고 다음에 돌아올 때 적용 */
+function myAssetVersion() {
+  const sc = document.querySelector('script[src*="app.js?v="]');
+  const m = sc && sc.getAttribute('src').match(/v=([\w.]+)/);
+  return m ? m[1] : '';
+}
+async function checkAppVersion(applyNow) {
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    const j = await r.json();
+    const mine = myAssetVersion();
+    if (!mine || !j.asset || j.asset === mine) return false;
+    if (applyNow) {
+      flushPendingProgress(true);
+      setTimeout(() => window.location.reload(), 400);
+    } else if (!state.updateNoticeShown) {
+      state.updateNoticeShown = true;
+      showXpToast('🔄 obsibook 새 버전이 있어요 — 잠시 다른 앱에 다녀오거나 새로고침하면 적용돼요');
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function fetchFreshProgress(docPath, timeoutMs = 3000) {
@@ -4921,10 +4993,28 @@ function stopTTS() {
 /* =========================================================
    Typography, Eye-Care Theme & Sidebar Controls
    ========================================================= */
+function viewSettingsSignature() {
+  return JSON.stringify(state.settings) + '|' + zoomButtonVisible() + '|' + readerDeviceClass();
+}
 function toggleSettingsPopover() {
   const pop = document.getElementById('settings-popover');
   pop.classList.toggle('hidden');
-  if (!pop.classList.contains('hidden')) renderViewSettings();
+  if (pop.classList.contains('hidden')) return;
+  // 설정이 그대로면 다시 그리지 않고 숫자만 맞춤(글꼴 미리보기까지 매번 새로 그려 느렸음, 2026-11-17)
+  const body = document.getElementById('view-settings-body');
+  if (state.viewSettingsSig === viewSettingsSignature() && body && body.firstElementChild) syncViewSettingsUI();
+  else renderViewSettings();
+}
+// 접속 후 한가할 때 설정창을 안 보이게 한 번 그려 둠(글꼴 미리보기 준비) → 처음 열 때도 바로
+function prewarmSettingsPopover() {
+  const pop = document.getElementById('settings-popover');
+  if (!pop || !pop.classList.contains('hidden') || state.viewSettingsSig) return;
+  pop.style.visibility = 'hidden';
+  pop.classList.remove('hidden');
+  renderViewSettings();
+  void pop.offsetHeight;
+  pop.classList.add('hidden');
+  pop.style.visibility = '';
 }
 
 function applySetting(key, val) {
@@ -5048,6 +5138,7 @@ function vsRow(def, value) {
 function renderViewSettings() {
   const box = document.getElementById('view-settings-body');
   if (!box) return;
+  state.viewSettingsSig = viewSettingsSignature();
   const s = state.settings;
   const z = Math.round((state.readerZoom || 1) * 100);
   const devName = { phone: '휴대폰', tablet: '태블릿', desktop: 'PC', large: '큰 모니터' }[readerDeviceClass()] || '이 기기';
@@ -5239,6 +5330,7 @@ function setupMobileAndTouchUX() {
       // 못 보낸 진도를 먼저 보내고, 3분 이상 다른 앱·기기를 쓰다 돌아왔으면 서재 목록(진도·완독 표시)을 조용히 새로 받고, 열린 문서 위치도 확인
       const away = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
       state.hiddenAt = 0;
+      if (away >= 60000) checkAppVersion(true);
       const after = () => checkRemoteProgress();
       flushAllPendingProgress().then(() => {
         if (away >= 180000 && state.library) return refreshLibrary(false).then(after).catch(after);
@@ -5253,8 +5345,11 @@ function setupMobileAndTouchUX() {
   window.addEventListener('online', () => {
     flushAllPendingProgress().then(() => checkRemoteProgress());
   });
-  // 접속 후 한가할 때 최근 문서 미리 준비
+  // 접속 후 한가할 때 최근 문서 미리 준비 + 설정창 미리 그리기
   setTimeout(scheduleDocWarmup, 4000);
+  setTimeout(() => { if (performance.now() - (state.lastUserInputAt || 0) > 2000) prewarmSettingsPopover(); }, 6000);
+  // 새 버전 확인: 30분마다(읽는 중이면 알림만)
+  setInterval(() => { if (document.visibilityState === 'visible') checkAppVersion(false); }, 30 * 60 * 1000);
   // 처음 열 때(지난번에 못 보내고 앱이 꺼졌을 수 있음)
   setTimeout(() => { if (Object.keys(loadPendingProgress()).length) flushAllPendingProgress(); }, 1500);
   // PC에서 다른 창을 보다 돌아올 때(탭 전환이 아니라 창 전환은 visibilitychange가 안 생김)
