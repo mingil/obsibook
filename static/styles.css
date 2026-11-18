@@ -245,6 +245,9 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* 2026-11-18: 안드로이드 크롬 등은 100vh를 "주소창이 숨었을 때" 높이로 계산해 화면 아래(왼쪽 아래 서재·동기화 상태)가 잘렸음
+     → 지금 실제로 보이는 높이(dvh). 지원 안 하는 예전 브라우저는 위 100vh 사용 */
+  height: 100dvh;
   width: 100vw;
 }
 
@@ -1218,3 +1221,10 @@ html.boot-doc #doc-load-progress { display: flex; }
 /* 목차: 소제목이 수천~만 개인 문서에서 "space-y"(앞 형제들과 비교하는 간격 규칙)가 스타일 계산을 폭증시켜 열기에 20초+ 걸렸음(2026-11-17)
    → 항목마다 아래 여백만 주는 단순 규칙으로 */
 #right-toc-list > .toc-entry { margin-bottom: 0.25rem; }
+/* 왼쪽 아래 서재·동기화 카드가 기기 아래쪽 시스템 막대(홈 표시줄·내비게이션 바)에 가리지 않게(2026-11-18) */
+#sidebar-left-footer { padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px)); flex-shrink: 0; }
+/* 태블릿 폭(1024px 이하)에서도 열린 서랍(왼쪽 서재·오른쪽 학습패널)이 탭 줄 위로 — 안드로이드 태블릿 세로에서 서재 검색칸이 탭 줄에 가렸음(2026-11-18) */
+@media (max-width: 1024px) {
+  .sidebar-left:not(.collapsed), .sidebar-right:not(.collapsed) { z-index: 37; }
+  .mobile-backdrop { z-index: 34; }
+}
