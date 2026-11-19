@@ -1170,6 +1170,13 @@ async function loadLibrary() {
       openFolderExplorer(folderPath, { skipHistory: true });
     }
   }
+  // 접속·새로고침 때: 다른 기기에서 이 기기보다 나중에 다른 문서를 읽었으면 그 문서·위치로(문서 열기가 끝난 뒤)
+  // 문서를 여는 중이거나 큰 문서 로딩 카드가 떠 있으면 끝날 때까지 기다렸다가 확인(최대 약 20초)
+  // 접속 직후 사용자가 직접 다른 문서를 열었으면(주소로 복원된 문서 말고) 끌고 가지 않음
+  const bootOpenTotal = state.docOpenTotal || 0;
+  (function bootLatest(tries) {
+    setTimeout(() => ((state.docOpenTotal || 0) > bootOpenTotal ? Promise.resolve(false) : checkLatestElsewhere('boot')).then((r) => { if (r === 'busy' && tries < 40) bootLatest(tries + 1); }), tries ? 500 : 1200);
+  })(0);
 }
 
 function collectAllCachedAssetUrls() {
@@ -2424,7 +2431,19 @@ function renderSidebar() {
 /* =========================================================
    Opening & Rendering an Obsidian Document as E-Book
    ========================================================= */
+// 문서를 여는 중인지 센다(접속 직후 '다른 기기 최신 문서' 확인이 여는 도중에 끼어들지 않게)
 async function openDocument(docPath, options = {}) {
+  state.docOpening = (state.docOpening || 0) + 1; state.docOpenTotal = (state.docOpenTotal || 0) + 1;
+  try { return await openDocumentInner(docPath, options); } finally { state.docOpening = Math.max(0, (state.docOpening || 1) - 1); }
+}
+async function openDocumentInner(docPath, options = {}) {
+  // 여는 도중 다른 문서를 새로 열기 시작했으면, 이 (먼저 시작한) 열기는 화면을 덮어쓰지 않고 그만둠
+  const openSeq = state.docOpenTotal;
+  const superseded = () => {
+    if (openSeq === state.docOpenTotal) return false;
+    if ((state.docOpening || 0) <= 1 && state.docLoaderShownAt) hideDocLoader();
+    return true;
+  };
   stopTTS();
   flushPendingProgress();
   // 최신 진도 확인은 문서 내용을 받는 동안 함께(순서대로 기다리면 그만큼 늦게 열림)
@@ -2493,6 +2512,7 @@ async function openDocument(docPath, options = {}) {
   const doc = enrichDocWithLibraryState(rawDoc);
   // 기기에 저장된 문서·목록의 진도는 오래됐을 수 있음 → 서버의 최신 진도(위에서 함께 받기 시작)로 연다
   const progressResult = await progressPromise;
+  if (superseded()) return;
   const stillPending = progressResult.pending || null;
   const fresh = progressResult.fresh || null;
   if (stillPending) {
@@ -2638,6 +2658,7 @@ async function openDocument(docPath, options = {}) {
       cachedMarkdownHtml(doc, doc.content || '');
       showDocLoader(loaderTitle, 3);
       await nextPaint();
+      if (superseded()) return;
     }
     renderMarkdownArticle(doc);
   }
@@ -3853,7 +3874,7 @@ function setupScrollListener() {
   const viewport = document.getElementById('reader-viewport');
   // 사람이 직접 조작했는지 표시(문서를 연 뒤 자동 이동·화면 높이 변화와 구분)
   ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach((ev) =>
-    document.addEventListener(ev, () => { state.userInteracted = true; state.lastUserInputAt = performance.now(); }, { passive: true, capture: true })
+    document.addEventListener(ev, () => { state.userInteracted = true; state.lastUserInputAt = performance.now(); if (state.currentView === 'doc') noteLocalActivity(); }, { passive: true, capture: true })
   );
   // 스크롤 중에는 표시만 해 두고, 위치·소제목 계산은 스크롤이 잠깐 멈췄을 때 한 번(2026-11-15)
   // 스크롤 도중(초당 60번) 계산하면 브라우저가 배치를 그때마다 다시 해 큰 문서에서 스크롤이 끊겼음
@@ -4065,6 +4086,7 @@ async function saveCurrentProgress(opts = {}) {
   const doc = state.currentDoc;
   const path = doc.path;
 
+  noteLocalActivity(true);
   // 보내기 전에 먼저 기기에 적어 둠(이 사이 앱이 꺼져도 다음에 다시 보냄)
   const m = loadPendingProgress();
   const prev = m[path];
@@ -4603,6 +4625,67 @@ function applyRemoteProgress(sp, reason) {
   state.resumeToastTimer = setTimeout(hideResumeToast, 10000);
 }
 
+/* ===== 다른 기기에서 마지막으로 읽던 "문서"로 (2026-11-19) =====
+   같은 문서 안의 위치만 맞추던 것을 넘어, 다른 기기에서 다른 문서를 더 나중에 읽었으면 그 문서·위치로 연다.
+   "더 나중"의 기준: 이 기기를 마지막으로 만진 시각(터치·스크롤·키 입력, 서버 시계로 보정)보다 다른 기기의 읽은 시각이 늦을 때 */
+function noteLocalActivity(force) {
+  const now = Date.now();
+  if (!force && now - (state.lastActivityNoted || 0) < 15000) return;
+  state.lastActivityNoted = now;
+  try { localStorage.setItem('obsibook_last_activity', String(serverNowMs())); } catch (e) {}
+}
+function localActivityMs() {
+  try { return Number(localStorage.getItem('obsibook_last_activity') || 0); } catch (e) { return 0; }
+}
+async function checkLatestElsewhere(reason) {
+  if (!state.library) return false;
+  if (state.latestCheckBusy || document.visibilityState === 'hidden' || state.docLoaderShownAt || state.docOpening) return 'busy';
+  // 지금 이 기기로 문서를 읽는 중이면 건드리지 않음(접속 직후 로그인 버튼 누름 등은 제외)
+  if (reason !== 'boot' && state.currentView === 'doc' && performance.now() - (state.lastUserInputAt || -1e9) < 5000) return false;
+  state.latestCheckBusy = true;
+  try {
+    const sentAt = Date.now(); const openTotal0 = state.docOpenTotal || 0;
+    const res = await Promise.race([apiFetch('/api/progress/latest'), new Promise((r) => setTimeout(() => r(null), 4000))]);
+    if (!res || !res.progress) return;
+    // 서버에 묻는 사이 사용자가 문서를 열었으면 끼어들지 않음
+    if ((state.docOpenTotal || 0) !== openTotal0 || state.docOpening) return;
+    noteServerClock(res.server_ms, sentAt);
+    const lp = res.progress;
+    if (!lp.doc_path || (lp.last_device || '') === getDeviceId()) return;
+    if (Number(lp.read_ts || 0) <= localActivityMs()) return;              // 이 기기를 더 나중에 썼음
+    if (state.currentDoc && state.currentView === 'doc' && state.currentDoc.path === lp.doc_path) return;   // 같은 문서는 위치 동기화가 처리
+    const meta = (state.library.documents || []).find((d) => d.path === lp.doc_path);
+    if (!meta) return;
+    const prevPath = state.currentView === 'doc' && state.currentDoc ? state.currentDoc.path : null;
+    state.latestSwitch = { path: lp.doc_path, rev: Number(lp.rev || 0) };
+    await openDocument(lp.doc_path, { restoreScroll: true });
+    // openDocument가 띄우는 "마지막 읽던 위치" 안내 뒤에 덮어써서 보여 줌
+    setTimeout(() => {
+      const toast = document.getElementById('resume-toast');
+      const pct = Math.round(Number(lp.scroll_percent || 0));
+      document.getElementById('resume-toast-text').textContent =
+        `📱 다른 기기에서 마지막으로 읽던 「${(meta.title || '').slice(0, 24)}」(${pct}%)로 이동했어요.`;
+      const btn = document.getElementById('btn-resume-jump');
+      // 버튼은 숨기지 않음(같은 버튼을 다른 안내도 씀) — 돌아갈 문서가 없으면 "확인"
+      if (prevPath) {
+        btn.textContent = '원래 문서로';
+        btn.onclick = () => { noteLocalActivity(true); hideResumeToast(); openDocument(prevPath, { restoreScroll: true }); };
+      } else {
+        btn.textContent = '확인';
+        btn.onclick = () => { noteLocalActivity(true); hideResumeToast(); };
+      }
+      toast.classList.remove('hidden');
+      clearTimeout(state.resumeToastTimer);
+      state.resumeToastTimer = setTimeout(hideResumeToast, 10000);
+    }, 400);
+    return true;
+  } catch (e) {
+    return false;   // 조용히 넘어감(다음 확인 때 다시)
+  } finally {
+    state.latestCheckBusy = false;
+  }
+}
+
 /* 다른 기기에서 더 최근에 읽었으면 그 위치로 (앱 복귀·창 포커스·30초마다) */
 async function checkRemoteProgress() {
   if (!state.currentDoc || state.currentView !== 'doc' || document.visibilityState === 'hidden') return;
@@ -4615,6 +4698,12 @@ async function checkRemoteProgress() {
   const sp = await fetchFreshProgress(path, 4000);
   if (!sp || !state.currentDoc || state.currentDoc.path !== path) return;
   const local = state.currentDoc.progress || {};
+  // 다른 기기의 마지막 문서로 막 옮겨 온 그 기록 그대로면 다시 옮기지 않음(옮긴 뒤 새로 저장된 것만 따라감)
+  const ls = state.latestSwitch;
+  if (ls && ls.path === path && Number(sp.rev || 0) <= ls.rev) {
+    if (Number(sp.rev || 0) > Number(local.rev || 0)) state.currentDoc.progress = { ...local, rev: sp.rev };
+    return;
+  }
   const newer = Number(sp.rev || 0) > Number(local.rev || 0) && (sp.last_device || '') !== getDeviceId();
   if (newer) applyRemoteProgress(sp, 'remote');
   else if (Number(sp.rev || 0) > Number(local.rev || 0)) state.currentDoc.progress = { ...local, rev: sp.rev };
@@ -5331,7 +5420,7 @@ function setupMobileAndTouchUX() {
       const away = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
       state.hiddenAt = 0;
       if (away >= 60000) checkAppVersion(true);
-      const after = () => checkRemoteProgress();
+      const after = () => checkLatestElsewhere('visible').then((switched) => { if (switched !== true) checkRemoteProgress(); });
       flushAllPendingProgress().then(() => {
         if (away >= 180000 && state.library) return refreshLibrary(false).then(after).catch(after);
         return after();
@@ -5360,8 +5449,11 @@ function setupMobileAndTouchUX() {
   // + 보관해 둔(못 보낸) 진도가 있으면 다시 보내기(인터넷 연결 신호가 안 오는 기기 대비)
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
-    if (state.currentView === 'doc') checkRemoteProgress();
-    else if (Object.keys(loadPendingProgress()).length) flushAllPendingProgress();
+    checkLatestElsewhere('poll').then((switched) => {
+      if (switched === true) return;
+      if (state.currentView === 'doc') checkRemoteProgress();
+      else if (Object.keys(loadPendingProgress()).length) flushAllPendingProgress();
+    });
   }, 30000);
 
   let touchStartX = 0;

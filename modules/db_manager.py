@@ -463,6 +463,14 @@ class DatabaseManager:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_latest_progress(self) -> Optional[Dict[str, Any]]:
+        """모든 문서 중 가장 최근에 읽은 기록(어느 기기든) — 다른 기기에서 열 때 '마지막으로 읽던 문서'로 가기 위해(2026-11-19)"""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM reading_progress ORDER BY read_ts DESC, last_read_at DESC LIMIT 1"
+            ).fetchone()
+            return dict(row) if row else None
+
     def get_all_progress_map(self) -> Dict[str, Dict[str, Any]]:
         with self._get_conn() as conn:
             rows = conn.execute(

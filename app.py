@@ -571,6 +571,12 @@ def restart_doc_reading(payload: RestartPayload, _: bool = Depends(verify_auth))
     return {"status": "restarted", "progress": db.restart_reading(payload.doc_path, payload.device_id)}
 
 
+@app.get("/api/progress/latest")
+def get_latest_progress(_: bool = Depends(verify_auth)):
+    """어느 기기에서든 가장 최근에 읽은 문서와 위치."""
+    return {"progress": get_db().get_latest_progress(), "server_ms": int(time.time() * 1000)}
+
+
 @app.get("/api/progress")
 def get_doc_progress(doc_path: str, _: bool = Depends(verify_auth)):
     """다른 기기에서 읽은 최신 위치 확인용(가벼운 조회)."""
