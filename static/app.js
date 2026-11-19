@@ -2434,6 +2434,8 @@ function renderSidebar() {
 // 문서를 여는 중인지 센다(접속 직후 '다른 기기 최신 문서' 확인이 여는 도중에 끼어들지 않게)
 async function openDocument(docPath, options = {}) {
   state.docOpening = (state.docOpening || 0) + 1; state.docOpenTotal = (state.docOpenTotal || 0) + 1;
+  // 이 기기에서 직접 문서를 연 것도 '이 기기를 쓴 시각'(주소로 자동 복원·뒤로 가기·자동 이동은 제외)
+  if (!options.skipHistory && !options.fromLatest) noteLocalActivity(true);
   try { return await openDocumentInner(docPath, options); } finally { state.docOpening = Math.max(0, (state.docOpening || 1) - 1); }
 }
 async function openDocumentInner(docPath, options = {}) {
@@ -4658,7 +4660,7 @@ async function checkLatestElsewhere(reason) {
     if (!meta) return;
     const prevPath = state.currentView === 'doc' && state.currentDoc ? state.currentDoc.path : null;
     state.latestSwitch = { path: lp.doc_path, rev: Number(lp.rev || 0) };
-    await openDocument(lp.doc_path, { restoreScroll: true });
+    await openDocument(lp.doc_path, { restoreScroll: true, fromLatest: true });
     // openDocument가 띄우는 "마지막 읽던 위치" 안내 뒤에 덮어써서 보여 줌
     setTimeout(() => {
       const toast = document.getElementById('resume-toast');
