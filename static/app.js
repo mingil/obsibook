@@ -5521,7 +5521,58 @@ function toggleZenMode(force) {
   if (!(document.fullscreenElement || document.webkitFullscreenElement) && window._zenOwnsFullscreen && document.body.classList.contains('zen-mode')) toggleZenMode(false);
 }));
 
+// ↑↓를 누르고 있는 동안 부드럽게 연속 스크롤(점점 빨라짐), 짧게 누르면 한 칸(약 80px)
+const KEY_SCROLL_STEP = 80;
+function readerKeyScrollAllowed(e) {
+  if (state.currentView !== 'doc' || !state.currentDoc || state.settings.viewMode === 'paginated') return false;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  const a = document.activeElement;
+  if (a && (a.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(a.tagName) && e.key === ' ')) return false;
+  if (['quick-switcher-modal', 'flashcard-modal', 'bookmark-modal', 'domain-modal'].some((id) => { const m = document.getElementById(id); return m && !m.classList.contains('hidden'); })) return false;
+  return true;
+}
+function stopKeyScroll() {
+  const ks = state.keyScroll; if (!ks) return;
+  cancelAnimationFrame(ks.raf); state.keyScroll = null;
+  if (ks.moved < KEY_SCROLL_STEP) ks.vp.scrollBy({ top: ks.dir * (KEY_SCROLL_STEP - ks.moved), behavior: 'smooth' });
+}
+function handleReaderKeyScroll(e) {
+  const k = e.key;
+  if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' '].includes(k)) return false;
+  if (!readerKeyScrollAllowed(e)) return false;
+  const vp = document.getElementById('reader-viewport'); if (!vp) return false;
+  e.preventDefault();
+  state.userInteracted = true;
+  if (k === 'PageDown' || k === 'PageUp' || k === ' ') {
+    const dir = (k === 'PageUp' || (k === ' ' && e.shiftKey)) ? -1 : 1;
+    vp.scrollBy({ top: dir * Math.round(vp.clientHeight * 0.85), behavior: 'smooth' });
+    return true;
+  }
+  const dir = k === 'ArrowDown' ? 1 : -1;
+  if (state.keyScroll && state.keyScroll.dir === dir) return true;   // 누르고 있는 중(키 반복)
+  stopKeyScroll();
+  const ks = { dir, vp, moved: 0, t0: performance.now(), last: performance.now(), raf: 0, acc: 0 };
+  state.keyScroll = ks;
+  const tick = (now) => {
+    if (state.keyScroll !== ks) return;
+    const dt = Math.min(0.05, (now - ks.last) / 1000); ks.last = now;
+    const held = (now - ks.t0) / 1000;
+    // 처음 0.15초는 짧은 누름 판정용으로 천천히, 그 뒤 점점 빨라짐(최대 초당 1800px)
+    const v = held < 0.15 ? 500 : Math.min(1800, 700 + (held - 0.15) * 1600);
+    ks.acc += v * dt;
+    const px = Math.floor(ks.acc);
+    if (px >= 1) { ks.acc -= px; const before = vp.scrollTop; vp.scrollTo({ top: before + dir * px, behavior: 'instant' }); ks.moved += Math.abs(vp.scrollTop - before); }
+    ks.raf = requestAnimationFrame(tick);
+  };
+  ks.raf = requestAnimationFrame(tick);
+  return true;
+}
+
 function setupKeyboardShortcuts() {
+  document.addEventListener('keyup', (e) => {
+    if (state.keyScroll && ((e.key === 'ArrowDown' && state.keyScroll.dir === 1) || (e.key === 'ArrowUp' && state.keyScroll.dir === -1))) stopKeyScroll();
+  });
+  window.addEventListener('blur', () => { if (state.keyScroll) { cancelAnimationFrame(state.keyScroll.raf); state.keyScroll = null; } });
   // 창 바깥(어두운 배경)을 누르면 닫기 — 입력칸이 없는 창만 (메모·도메인 창은 입력 내용 보호를 위해 ✕로만)
   document.addEventListener('click', (e) => {
     if (e.target?.id === 'quick-switcher-modal') closeQuickSwitcher();
@@ -5545,6 +5596,9 @@ function setupKeyboardShortcuts() {
     }
 
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+
+    // 문서를 볼 때 ↑↓·PageUp/PageDown·스페이스는 화면을 스크롤(브라우저의 캐럿 브라우징(F7)이나 본문에 생긴 커서가 움직이지 않게)
+    if (handleReaderKeyScroll(e)) return;
 
     // 본문 배율: Alt + = / Alt + - / Alt + 0 (브라우저 확대 Ctrl 과 겹치지 않음)
     // e.code(키 위치)로 판단: Mac 은 Option+= 가 "≠" 등으로 입력되기 때문
